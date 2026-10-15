@@ -1,190 +1,284 @@
 import './style.css';
-import { UPGRADE_COST } from './game/economy';
-import { createSession, nearHopper, stepSession, type GameInput } from './game/session';
+import { buyUpgrade, canBuyUpgrade, UPGRADE_DEFINITIONS, upgradeStats, type UpgradeId } from './game/economy';
+import { createSession, nearHopper, playerCenter, stepSession, type GameInput, type Session, type SessionOptions } from './game/session';
+import { deserializeSession, serializeSession } from './game/save';
+import { createVision, pingSonar, SONAR_COOLDOWN, updateVision } from './game/vision';
+import { ACTION_LABELS, DEFAULT_SETTINGS, keyLabel, readSettings, rebind, RESOLUTIONS, type Action } from './settings';
+import { AudioEngine } from './audio';
 import { Renderer } from './render';
 
+declare global {
+  interface Window { waterHoleDesktop?: { setDisplay(options: { fullscreen: boolean; width: number; height: number }): Promise<void>; quit(): void } }
+}
+type Screen = 'home' | 'new' | 'playing' | 'pause' | 'shop' | 'settings' | 'confirm' | 'ended';
+const SAVE_KEY = 'water-hole.demo.save.v1';
+const SETTINGS_KEY = 'water-hole.settings.v1';
 const app = document.querySelector<HTMLElement>('#app')!;
 app.innerHTML = `
   <header class="topbar">
-    <div class="identity"><span class="wordmark">WATER HOLE</span><span class="version">FIELD TEST / V0</span></div>
-    <div class="readouts">
-      <div class="tank-readout">
-        <div class="readout-label"><span>WATER TANK</span><strong id="tank-label">0 / 20</strong></div>
-        <div id="tank-meter" class="tank-meter" role="progressbar" aria-label="Water tank" aria-valuemin="0" aria-valuemax="20" aria-valuenow="0"><div id="tank-fill"></div></div>
-      </div>
-      <div class="credits-readout"><span class="readout-label">CREDITS</span><strong id="credits">0<span> cr</span></strong></div>
-    </div>
-    <button id="reset" class="quiet-button" type="button">Restart <kbd>R</kbd></button>
+    <div class="identity"><span class="wordmark">WATER HOLE</span><span class="version">EXCAVATION DEMO</span></div>
+    <div class="readouts"><div class="tank-readout"><div class="readout-label"><span>WATER TANK</span><strong id="tank-label">0 / 20</strong></div>
+      <div id="tank-meter" class="tank-meter" role="progressbar" aria-label="Water tank" aria-valuemin="0" aria-valuemax="20" aria-valuenow="0"><div id="tank-fill"></div></div></div>
+      <div class="credits-readout"><span class="readout-label">CREDITS</span><strong id="credits">0<span> cr</span></strong></div></div>
+    <button id="menu" class="quiet-button" type="button">Menu <kbd>Esc</kbd></button>
   </header>
   <section class="playfield" aria-label="Excavation site">
-    <canvas id="game" tabindex="0" aria-label="Water Hole game. WASD to move and climb, Space to jump, mouse to aim, left click to dig, E to collect, F to sell at the machine, B to upgrade, R to restart."></canvas>
-    <div class="objective"><span class="eyebrow" id="objective-step">01 / COLLECT & SELL</span><p id="objective">Earn 60 credits to upgrade your tank.</p></div>
-    <div class="machine-panel" id="machine-panel">
-      <div><span class="eyebrow">WATER EXCHANGE</span><span class="machine-status" id="machine-status">Return to the machine to sell.</span></div>
-      <button id="upgrade" class="upgrade-button" type="button" disabled><span id="upgrade-label">Tank 20 → 40</span><span id="upgrade-price">60 cr <kbd>B</kbd></span></button>
-    </div>
-    <div id="notice" class="notice" role="status" aria-live="polite"></div>
-    <div class="location"><span class="live-dot"></span>TEST SITE 01<span class="location-divider">/</span>FULL VISIBILITY</div>
-  </section>
-  <footer class="controls" aria-label="Controls">
-    <span><kbd>A</kbd><kbd>D</kbd> Move</span>
-    <span><kbd>W</kbd><kbd>S</kbd> Climb walls</span>
-    <span><kbd>Space</kbd> Jump / wall jump</span>
-    <span><kbd>LMB</kbd> Dig</span>
-    <span><kbd>E</kbd> Hold to collect</span>
-    <span><kbd>F</kbd> Sell at hopper</span>
-  </footer>
-`;
-
-const canvas = document.querySelector<HTMLCanvasElement>('#game')!;
+    <canvas id="game" tabindex="0" aria-label="Water Hole excavation game"></canvas>
+    <div class="field-readout"><span class="eyebrow" id="field-label">SURFACE OPERATIONS</span><p id="field-hint">Dig. Collect. Return. Improve.</p></div>
+    <button id="shop-open" class="machine-prompt" type="button"><span class="eyebrow">WATER EXCHANGE</span><span id="machine-status"></span></button>
+    <div class="location" id="location"></div><div id="notice" class="notice" role="status" aria-live="polite"></div>
+    <div id="overlay" class="overlay"><section id="panel" class="panel" role="dialog" aria-modal="true" aria-label="Game menu"></section></div>
+  </section><footer id="controls" class="controls" aria-label="Controls"></footer>`;
+function el<T extends HTMLElement = HTMLElement>(id: string): T { return document.getElementById(id) as T; }
+function read(key: string): string | null { try { return localStorage.getItem(key); } catch { return null; } }
+const canvas = el<HTMLCanvasElement>('game');
 const renderer = new Renderer(canvas);
+const audio = new AudioEngine();
+const settings = readSettings(read(SETTINGS_KEY));
 let session = createSession();
-const keys = new Set<string>();
-let digging = false;
-let aim = { x: 300, y: 210 };
+let vision = createVision(session.world, session.explored);
+let screen: Screen = 'home';
+let settingsReturn: Screen = 'home';
+let hasRun = false;
+let pendingNew: SessionOptions = {};
+let bindingAction: Action | null = null;
+let aim = { x: 320, y: 180 };
 let pointer = { x: 0, y: 0, active: false };
-let jumpPressed = false;
-let depositPressed = false;
-let upgradePressed = false;
-let noticeUntil = 0;
-let lastTime = performance.now();
-let accumulated = 0;
+const held = new Set<string>();
+const pressed = new Set<Action>();
+let accumulated = 0, lastTime = performance.now(), lastVisionAt = -1, lastTerrainVersion = -1;
+let lastAutoSaveAt = 0, noticeUntil = 0, lastHUDAt = 0;
 const STEP = 1 / 60;
-
-const tankLabel = document.querySelector<HTMLElement>('#tank-label')!;
-const tankMeter = document.querySelector<HTMLElement>('#tank-meter')!;
-const tankFill = document.querySelector<HTMLElement>('#tank-fill')!;
-const credits = document.querySelector<HTMLElement>('#credits')!;
-const objective = document.querySelector<HTMLElement>('#objective')!;
-const objectiveStep = document.querySelector<HTMLElement>('#objective-step')!;
-const machinePanel = document.querySelector<HTMLElement>('#machine-panel')!;
-const machineStatus = document.querySelector<HTMLElement>('#machine-status')!;
-const upgrade = document.querySelector<HTMLButtonElement>('#upgrade')!;
-const upgradeLabel = document.querySelector<HTMLElement>('#upgrade-label')!;
-const upgradePrice = document.querySelector<HTMLElement>('#upgrade-price')!;
-const notice = document.querySelector<HTMLElement>('#notice')!;
-
-function format(value: number): string {
-  return value.toLocaleString('en', { maximumFractionDigits: 1 });
+const format = (value: number) => value.toLocaleString('en', { maximumFractionDigits: 1 });
+const down = (action: Action) => held.has(settings.bindings[action]);
+function clearInput(): void { held.clear(); pressed.clear(); accumulated = 0; }
+function notice(message: string): void { el('notice').textContent = message; el('notice').classList.add('visible'); noticeUntil = performance.now() + 3200; }
+function syncSonar(): void { session.sonar = vision.sonar; session.lastSonarAt = vision.lastSonarAt; }
+function saveRun(notify = true): boolean {
+  if (!hasRun) return false;
+  try { syncSonar(); localStorage.setItem(SAVE_KEY, serializeSession(session)); lastAutoSaveAt = session.time; if (notify) notice('Expedition saved.'); return true; }
+  catch { if (notify) notice('Could not save. Local storage may be full or unavailable.'); return false; }
 }
-
-function showNotice(message: string) {
-  notice.textContent = message;
-  notice.classList.add('visible');
-  noticeUntil = performance.now() + 2400;
+function restore(next: Session): void {
+  session = next; hasRun = true; vision = createVision(session.world, session.explored);
+  vision.sonar = session.sonar; vision.lastSonarAt = session.lastSonarAt; pointer.active = false;
+  const centre = playerCenter(session); aim = { x: centre.x + session.facing * 80, y: centre.y };
+  lastVisionAt = -1; lastTerrainVersion = -1; lastAutoSaveAt = session.time;
+  changeScreen(session.completed ? 'ended' : 'playing');
 }
-
-function reset() {
-  session = createSession();
-  keys.clear();
-  digging = false;
-  jumpPressed = depositPressed = upgradePressed = false;
-  accumulated = 0;
-  showNotice('Fresh test site. Water is visible everywhere.');
-  canvas.focus({ preventScroll: true });
+function loadRun(): void {
+  try { const raw = read(SAVE_KEY); if (!raw) { notice('No saved expedition yet.'); return; } restore(deserializeSession(raw)); notice('Expedition loaded.'); }
+  catch (error) { notice(error instanceof Error ? error.message : 'Could not load the expedition.'); }
 }
-
-document.querySelector<HTMLButtonElement>('#reset')!.addEventListener('click', reset);
-upgrade.addEventListener('click', () => {
-  upgradePressed = true;
-  canvas.focus({ preventScroll: true });
+function saveSettings(): void {
+  audio.volumes(settings.music, settings.sfx);
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { notice('Could not store preferences.'); }
+  renderControls();
+}
+function heading(eyebrow: string, title: string, text = ''): string { return `<span class="eyebrow">${eyebrow}</span><h1>${title}</h1>${text ? `<p class="panel-intro">${text}</p>` : ''}`; }
+function button(action: string, label: string, primary = false, disabled = false): string { return `<button type="button" data-action="${action}" class="${primary ? 'primary-button' : 'menu-button'}" ${disabled ? 'disabled' : ''}>${label}</button>`; }
+function changeScreen(next: Screen): void {
+  clearInput(); bindingAction = null; screen = next; el('overlay').hidden = next === 'playing';
+  audio.setActive(next !== 'pause' && next !== 'settings'); renderPanel();
+  updateHUD();
+  if (next === 'playing') canvas.focus({ preventScroll: true });
+}
+function renderPanel(): void {
+  el('panel').className = `panel panel-${screen}`;
+  if (screen === 'playing') return;
+  const saved = !!read(SAVE_KEY);
+  switch (screen) {
+    case 'home': el('panel').innerHTML = `${heading('A SMALL INDUSTRIAL EXPEDITION', 'Useful work.<br>Deeper ground.', 'Find water beneath the surface. Bring it back. Build the equipment to go further.')}
+      <div class="menu-stack">${hasRun && !session.completed ? button('resume', 'Resume expedition', true) : ''}${button('new', 'New game', !hasRun || session.completed)}${button('load', 'Continue saved game', false, !saved)}${button('settings', 'Settings')}${window.waterHoleDesktop ? button('quit', 'Quit') : ''}</div><p class="small-note">A finite site. A pickaxe. A water exchange.</p>`; break;
+    case 'new': el('panel').innerHTML = `${heading('NEW EXPEDITION', 'Choose your site', 'The visibility comparisons are independent. Your choices stay with this save.')}
+      <form id="new-form"><label class="setting-row">Site seed<input id="site-seed" type="number" min="0" max="4294967295" step="1" value="${crypto.getRandomValues(new Uint32Array(1))[0]}"></label>
+      <label class="setting-row">Cave memory<select id="cave-memory"><option value="remembered">Dim remembered outlines</option><option value="sonar">Dark caves / sonar outlines</option></select></label>
+      <label class="setting-row">Headlamp direction<select id="headlamp"><option value="character">Character facing</option><option value="mouse">Mouse aim + head rotation</option></select></label>
+      ${import.meta.env.DEV ? '<label class="setting-row">Full visibility for testing<input id="debug-vision" type="checkbox"></label>' : ''}
+      <div class="panel-actions"><button type="submit" class="primary-button">Begin expedition</button>${button('back-home', 'Back')}</div></form><p class="small-note">A new expedition replaces the single saved game after confirmation.</p>`; break;
+    case 'confirm': el('panel').innerHTML = `${heading('START OVER', 'Replace this expedition?', 'Starting a new game replaces your current expedition and saved game.')}<div class="panel-actions">${button('confirm-new', 'Start new expedition', true)}${button('cancel-new', 'Keep current expedition')}</div>`; break;
+    case 'pause': el('panel').innerHTML = `${heading('EXPEDITION PAUSED', 'Take a breather', 'Terrain, water, and equipment are paused.')}<div class="menu-stack">${button('resume', 'Resume', true)}${button('save', 'Save game')}${button('load', 'Load saved game', false, !saved)}${button('settings', 'Settings')}${button('home', 'Save & return to menu')}${window.waterHoleDesktop ? button('quit', 'Save & quit') : ''}</div>`; break;
+    case 'shop': renderShop(); break;
+    case 'settings': renderSettings(); break;
+    case 'ended': el('panel').innerHTML = `${heading('WATER HOLE', 'Thanks for playing<br>the demo.', 'You have reached the end of this demo. Thanks for spending some time underground.')}<div class="panel-actions">${button('new', 'New expedition', true)}${button('home', 'Main menu')}${window.waterHoleDesktop ? button('quit', 'Quit') : ''}</div>`; break;
+  }
+}
+function statDescription(id: UpgradeId): string {
+  const stats = upgradeStats(session.tank), level = session.tank.upgrades[id];
+  const next = upgradeStats({ ...session.tank, upgrades: { ...session.tank.upgrades, [id]: level + 1 } });
+  switch (id) {
+    case 'digRadius': return `Impact radius ${stats.digRadius} → ${next.digRadius ?? stats.digRadius}`;
+    case 'digDamage': return `Damage per strike ${stats.digDamage} → ${next.digDamage ?? stats.digDamage}`;
+    case 'climbSpeed': return `Climbing speed ${stats.climbSpeed} → ${next.climbSpeed ?? stats.climbSpeed}`;
+    case 'capacity': return `Water capacity ${stats.capacity} → ${next.capacity ?? stats.capacity}`;
+    case 'detectorRange': return session.tank.upgrades.detector
+      ? `Detection radius ${stats.detectorRadius} → ${next.detectorRadius ?? stats.detectorRadius}`
+      : `With detector: radius ${[160, 240, 320][level]} → ${[160, 240, 320][Math.min(2, level + 1)]}`;
+    default: return level ? 'Installed' : 'One-time equipment purchase';
+  }
+}
+function renderShop(): void {
+  el('panel').innerHTML = `${heading('WATER EXCHANGE / EQUIPMENT', 'Make the next trip easier', `${format(session.tank.credits)} credits available`)}<div class="upgrade-grid">${UPGRADE_DEFINITIONS.map(definition => {
+    const level = session.tank.upgrades[definition.id], cost = definition.costs[level];
+    const locked = definition.requires && !session.tank.upgrades[definition.requires], maximum = cost === undefined;
+    return `<article class="upgrade-card"><div class="upgrade-title"><h2>${definition.name}</h2><span>${level} / ${definition.costs.length}</span></div><p>${definition.description}</p><div class="upgrade-effect">${statDescription(definition.id)}</div>
+      <button type="button" data-purchase="${definition.id}" class="purchase-button" ${!canBuyUpgrade(session.tank, definition.id) ? 'disabled' : ''}>${maximum ? 'Fully installed' : locked ? 'Requires water detector' : `Install · ${cost} cr`}</button></article>`;
+  }).join('')}</div><div class="panel-actions">${button('resume', 'Return to work', true)}</div>`;
+}
+function renderSettings(): void {
+  el('panel').innerHTML = `${heading('SETTINGS', 'Your working setup')}<div class="settings-grid"><section><h2>Graphics</h2>
+    <label class="setting-row">Window size<select id="resolution">${RESOLUTIONS.map(value => `<option ${settings.resolution === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
+    <label class="setting-row">Fullscreen<input id="fullscreen" type="checkbox" ${settings.fullscreen ? 'checked' : ''}></label>${button('apply-display', 'Apply display')}
+    <h2>Audio</h2><label class="setting-row">Music<input id="music-volume" type="range" min="0" max="1" step="0.05" value="${settings.music}"></label>
+    <label class="setting-row">Sound effects<input id="sfx-volume" type="range" min="0" max="1" step="0.05" value="${settings.sfx}"></label></section>
+    <section><h2>Keybindings</h2><div class="binding-list">${(Object.keys(ACTION_LABELS) as Action[]).map(action => `<div class="binding-row"><span>${ACTION_LABELS[action]}</span><button type="button" data-binding="${action}">${keyLabel(settings.bindings[action])}</button></div>`).join('')}</div>${button('reset-bindings', 'Reset bindings')}</section></div>
+    <div class="panel-actions">${button('settings-back', 'Back', true)}</div><p class="small-note">Select a binding, then press a key or mouse button. Escape cancels binding capture.</p>`;
+}
+async function applyDisplay(): Promise<void> {
+  const fullscreen = el<HTMLInputElement>('fullscreen').checked, resolution = el<HTMLSelectElement>('resolution').value;
+  const [width, height] = resolution.split('x').map(Number);
+  try {
+    if (window.waterHoleDesktop) await window.waterHoleDesktop.setDisplay({ fullscreen, width, height });
+    else if (fullscreen && !document.fullscreenElement) await document.documentElement.requestFullscreen();
+    else if (!fullscreen && document.fullscreenElement) await document.exitFullscreen();
+    settings.fullscreen = fullscreen; settings.resolution = resolution;
+    saveSettings(); notice('Display settings applied.');
+  } catch { notice('This display mode could not be applied.'); }
+}
+function renderControls(): void {
+  const hints: [Action, string][] = [['left', 'Move'], ['up', 'Climb'], ['jump', 'Jump'], ['dig', 'Strike'], ['collect', 'Collect'], ['unload', 'Unload'], ['shop', 'Shop'], ['sonar', 'Sonar']];
+  el('controls').innerHTML = hints.map(([action, label]) => `<span><kbd>${keyLabel(settings.bindings[action])}${action === 'left' ? ` / ${keyLabel(settings.bindings.right)}` : action === 'up' ? ` / ${keyLabel(settings.bindings.down)}` : ''}</kbd>${label}</span>`).join('');
+  el('menu').innerHTML = `Menu <kbd>${keyLabel(settings.bindings.pause)}</kbd>`;
+}
+function beginNew(): void { restore(createSession(pendingNew)); saveRun(false); notice('Explore the shaft. Hold your dig control for repeated pickaxe strikes.'); }
+el('panel').addEventListener('submit', event => {
+  event.preventDefault(); if (screen !== 'new') return;
+  const seed = Number(el<HTMLInputElement>('site-seed').value);
+  if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) { notice('Choose a whole-number seed between 0 and 4294967295.'); return; }
+  pendingNew = { seed, caveMemory: el<HTMLSelectElement>('cave-memory').value as 'remembered' | 'sonar', headlamp: el<HTMLSelectElement>('headlamp').value as 'character' | 'mouse', debugVision: import.meta.env.DEV && !!document.querySelector<HTMLInputElement>('#debug-vision')?.checked };
+  if (hasRun || read(SAVE_KEY)) changeScreen('confirm'); else beginNew();
 });
-
-const gameKeys = new Set(['KeyA', 'KeyD', 'KeyW', 'KeyS', 'Space', 'KeyE', 'KeyF', 'KeyB', 'KeyR']);
+el('panel').addEventListener('click', event => {
+  const target = (event.target as HTMLElement).closest<HTMLButtonElement>('button'); if (!target || target.disabled) return;
+  void audio.unlock().catch(() => {}); audio.play('menu');
+  if (target.dataset.binding) { bindingAction = target.dataset.binding as Action; target.textContent = 'Press input…'; return; }
+  if (target.dataset.purchase) {
+    if (screen === 'shop' && nearHopper(session) && buyUpgrade(session.tank, target.dataset.purchase as UpgradeId)) { audio.play('buy'); saveRun(false); renderShop(); updateHUD(); }
+    return;
+  }
+  switch (target.dataset.action) {
+    case 'resume': changeScreen(session.completed ? 'ended' : 'playing'); break;
+    case 'new': changeScreen('new'); break;
+    case 'confirm-new': beginNew(); break;
+    case 'cancel-new': changeScreen(hasRun && !session.completed ? 'playing' : 'home'); break;
+    case 'back-home': changeScreen(hasRun && !session.completed ? 'pause' : 'home'); break;
+    case 'load': loadRun(); break;
+    case 'save': saveRun(); break;
+    case 'home': if (hasRun && !saveRun()) return; changeScreen('home'); break;
+    case 'settings': settingsReturn = screen; changeScreen('settings'); break;
+    case 'settings-back': changeScreen(settingsReturn); break;
+    case 'reset-bindings': settings.bindings = { ...DEFAULT_SETTINGS.bindings }; bindingAction = null; saveSettings(); renderSettings(); break;
+    case 'apply-display': void applyDisplay(); break;
+    case 'quit': if (hasRun && !saveRun()) return; window.waterHoleDesktop?.quit(); break;
+  }
+});
+el('panel').addEventListener('input', event => {
+  const target = event.target as HTMLInputElement;
+  if (target.id === 'music-volume') { settings.music = Number(target.value); saveSettings(); }
+  if (target.id === 'sfx-volume') { settings.sfx = Number(target.value); saveSettings(); }
+});
+function captureBinding(code: string): void {
+  if (!bindingAction) return;
+  if (code === 'Escape') { bindingAction = null; renderSettings(); return; }
+  if (!rebind(settings.bindings, bindingAction, code)) { notice('That input is already assigned or unsupported. Choose another.'); return; }
+  bindingAction = null; saveSettings(); renderSettings();
+}
+function pause(): void { if (hasRun && !session.completed) changeScreen('pause'); }
+el('menu').addEventListener('click', () => screen === 'playing' ? pause() : changeScreen(hasRun && !session.completed ? 'pause' : 'home'));
+el('shop-open').addEventListener('click', () => { if (screen === 'playing' && nearHopper(session)) changeScreen('shop'); });
 window.addEventListener('keydown', event => {
-  if (!gameKeys.has(event.code) || event.ctrlKey || event.metaKey || event.altKey) return;
-  if (event.target instanceof HTMLButtonElement && event.code === 'Space') return;
-  event.preventDefault();
-  keys.add(event.code);
-  if (event.repeat) return;
-  if (event.code === 'Space') jumpPressed = true;
-  if (event.code === 'KeyF') depositPressed = true;
-  if (event.code === 'KeyB') upgradePressed = true;
-  if (event.code === 'KeyR') reset();
+  void audio.unlock().catch(() => {});
+  if (bindingAction) { event.preventDefault(); captureBinding(event.code); return; }
+  if ((event.ctrlKey && event.code !== 'ControlLeft') || event.metaKey || event.altKey) return;
+  if ((event.code === settings.bindings.pause || event.code === 'Escape') && !(event.target instanceof HTMLInputElement && screen === 'new')) {
+    event.preventDefault(); if (event.repeat) return;
+    if (screen === 'playing') pause();
+    else if (screen === 'pause' || screen === 'shop') changeScreen('playing');
+    else if (screen === 'settings') changeScreen(settingsReturn);
+    else if (screen === 'new' || screen === 'confirm') changeScreen(hasRun && !session.completed ? 'pause' : 'home');
+    return;
+  }
+  if (screen !== 'playing') return;
+  const action = (Object.keys(ACTION_LABELS) as Action[]).find(value => settings.bindings[value] === event.code); if (!action) return;
+  event.preventDefault(); held.add(event.code); if (event.repeat) return;
+  if (action === 'shop') { if (nearHopper(session)) changeScreen('shop'); else notice('Return to the water exchange to buy equipment.'); }
+  else pressed.add(action);
 });
-window.addEventListener('keyup', event => keys.delete(event.code));
-window.addEventListener('blur', () => {
-  keys.clear();
-  digging = false;
-  jumpPressed = depositPressed = upgradePressed = false;
-});
-canvas.addEventListener('pointermove', event => {
-  pointer = { x: event.clientX, y: event.clientY, active: true };
-});
+window.addEventListener('keyup', event => held.delete(event.code));
+window.addEventListener('pointerdown', event => {
+  void audio.unlock().catch(() => {});
+  if (bindingAction && !(event.target as HTMLElement).closest('[data-binding]')) { event.preventDefault(); event.stopImmediatePropagation(); captureBinding(`Mouse${event.button}`); }
+}, true);
+canvas.addEventListener('pointermove', event => { pointer = { x: event.clientX, y: event.clientY, active: true }; });
 canvas.addEventListener('pointerdown', event => {
-  if (event.button !== 0) return;
-  canvas.focus({ preventScroll: true });
-  pointer = { x: event.clientX, y: event.clientY, active: true };
-  digging = true;
+  if (screen !== 'playing') return;
+  event.preventDefault(); canvas.focus({ preventScroll: true }); pointer = { x: event.clientX, y: event.clientY, active: true };
+  const code = `Mouse${event.button}`; held.add(code);
+  const action = (Object.keys(ACTION_LABELS) as Action[]).find(value => settings.bindings[value] === code);
+  if (action === 'shop') { if (nearHopper(session)) changeScreen('shop'); } else if (action === 'pause') pause(); else if (action) pressed.add(action);
   canvas.setPointerCapture(event.pointerId);
 });
-canvas.addEventListener('pointerup', () => { digging = false; });
-canvas.addEventListener('lostpointercapture', () => { digging = false; });
+window.addEventListener('pointerup', event => held.delete(`Mouse${event.button}`));
+canvas.addEventListener('lostpointercapture', () => { held.delete('Mouse0'); held.delete('Mouse1'); held.delete('Mouse2'); });
 canvas.addEventListener('contextmenu', event => event.preventDefault());
-
-function updateHUD() {
-  const tank = session.tank;
-  tankLabel.textContent = `${format(tank.water)} / ${tank.capacity}`;
-  tankFill.style.width = `${Math.min(100, tank.water / tank.capacity * 100)}%`;
-  tankMeter.setAttribute('aria-valuenow', tank.water.toFixed(2));
-  tankMeter.setAttribute('aria-valuemax', String(tank.capacity));
-  credits.innerHTML = `${format(tank.credits)}<span> cr</span>`;
-  const atMachine = nearHopper(session);
-  machinePanel.classList.toggle('in-range', atMachine);
-  machineStatus.textContent = atMachine
-    ? (tank.water > .01 ? 'Press F to sell your water.' : '1 water = 1 credit. Bring a full tank.')
-    : 'Return to the machine to sell.';
-  upgrade.disabled = !atMachine || tank.upgraded || tank.credits < UPGRADE_COST;
-  upgradeLabel.textContent = tank.upgraded ? 'Capacity upgraded' : 'Tank 20 → 40';
-  upgradePrice.innerHTML = tank.upgraded ? 'Installed' : '60 cr <kbd>B</kbd>';
-  if (session.completed) {
-    objectiveStep.textContent = 'V0 LOOP COMPLETE';
-    objective.textContent = 'Dig. Collect. Sell. Upgrade. Carry more. You did it.';
-  } else if (tank.upgraded) {
-    objectiveStep.textContent = '03 / CARRY MORE';
-    objective.textContent = 'Collect more than 20 water with your upgraded tank.';
-  } else if (tank.credits >= UPGRADE_COST) {
-    objectiveStep.textContent = '02 / UPGRADE';
-    objective.textContent = 'Buy the larger tank at the machine. Press B nearby.';
-  } else {
-    objectiveStep.textContent = '01 / COLLECT & SELL';
-    objective.textContent = tank.water >= tank.capacity - .01
-      ? 'Tank full. Climb back and press F at the hopper.'
-      : `Earn ${format(Math.max(0, UPGRADE_COST - tank.credits))} more credits to upgrade your tank.`;
-  }
-  if (performance.now() > noticeUntil) notice.classList.remove('visible');
+window.addEventListener('blur', () => { clearInput(); if (screen === 'playing') pause(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInput(); if (screen === 'playing') pause(); } });
+window.addEventListener('beforeunload', () => { if (hasRun) saveRun(false); });
+function updateHUD(): void {
+  const { tank, player } = session;
+  el('tank-label').textContent = `${format(tank.water)} / ${tank.capacity}`; el('tank-fill').style.width = `${Math.min(100, tank.water / tank.capacity * 100)}%`;
+  el('tank-meter').setAttribute('aria-valuenow', tank.water.toFixed(2)); el('tank-meter').setAttribute('aria-valuemax', String(tank.capacity));
+  el('credits').innerHTML = `${format(tank.credits)}<span> cr</span>`;
+  const nearby = nearHopper(session); el('shop-open').hidden = screen !== 'playing' || !nearby;
+  el('machine-status').textContent = session.unloading ? 'Transferring water…' : `${keyLabel(settings.bindings.unload)} unload · ${keyLabel(settings.bindings.shop)} equipment`;
+  el('field-label').textContent = player.wall ? 'WALL ATTACHED' : `DEPTH ${Math.max(0, Math.floor((player.y - session.surfaceY) / 4))} m`;
+  el('field-hint').textContent = session.unloading ? 'Unloading into the hopper. Move away or press unload again to stop.' : player.wall && !tank.upgrades.wallDig ? `${keyLabel(settings.bindings.up)} / ${keyLabel(settings.bindings.down)} climb up / down. Jump or move away to detach. A work harness unlocks wall digging.` : tank.water >= tank.capacity - 0.01 ? 'Tank full. Return to the water exchange.' : nearby ? 'Water earns credits here. Buy equipment to improve your next trip.' : 'Hold to strike terrain. Collect exposed water into your tank.';
+  const cooldown = Math.max(0, SONAR_COOLDOWN - (session.time - vision.lastSonarAt));
+  el('location').textContent = `SITE ${session.seed} / ${session.options.caveMemory === 'remembered' ? 'CAVE MEMORY' : 'SONAR EXPLORATION'} / ${session.options.headlamp.toUpperCase()} LAMP${tank.upgrades.sonar ? ` / SONAR ${cooldown > 0 ? `${Math.ceil(cooldown)}s` : 'READY'}` : ''}`;
+  el('field-hint').hidden = !hasRun || screen === 'ended';
 }
-
-function tick(time: number) {
-  const elapsed = Math.min(.05, (time - lastTime) / 1000);
-  lastTime = time;
-  if (!document.hidden) accumulated += elapsed;
+function tick(time: number): void {
+  const elapsed = Math.max(0, Math.min(0.05, (time - lastTime) / 1000)); lastTime = time;
+  if (screen === 'playing' && !document.hidden) accumulated += elapsed;
   if (pointer.active) aim = renderer.screenToWorld(pointer.x, pointer.y);
-  while (accumulated >= STEP) {
-    const input: GameInput = {
-      left: keys.has('KeyA'), right: keys.has('KeyD'),
-      up: keys.has('KeyW'), down: keys.has('KeyS'), jumpPressed,
-      digging, aim, collecting: keys.has('KeyE'), depositPressed, upgradePressed,
-    };
-    const beforeCredits = session.tank.credits;
-    const beforeUpgrade = session.tank.upgraded;
-    const beforeComplete = session.completed;
-    const attemptedDeposit = depositPressed;
+  while (accumulated >= STEP && screen === 'playing') {
+    const input: GameInput = { left: down('left'), right: down('right'), up: down('up'), down: down('down'), jumpPressed: pressed.has('jump'), digging: down('dig'), aim, collecting: down('collect'), depositPressed: pressed.has('unload') };
+    if (pressed.has('sonar')) {
+      if (!session.tank.upgrades.sonar) notice('Install cave sonar at the water exchange.');
+      else if (pingSonar(vision, playerCenter(session), session.time, renderer.getSonarRadius(session))) { syncSonar(); audio.play('sonar'); }
+      else notice(`Sonar recharging: ${Math.ceil(SONAR_COOLDOWN - (session.time - vision.lastSonarAt))}s.`);
+    }
+    if (pressed.has('unload') && !nearHopper(session)) notice('Water can only be released at the hopper.');
+    const beforeStrike = session.lastStrike, beforeWater = session.tank.water, beforeDelivered = session.delivered;
     stepSession(session, input, STEP);
-    if (session.tank.credits > beforeCredits) showNotice(`Sold water for ${format(session.tank.credits - beforeCredits)} credits.`);
-    else if (attemptedDeposit) showNotice(nearHopper(session) ? 'Your tank is empty.' : 'Water can only be released at the hopper.');
-    if (!beforeUpgrade && session.tank.upgraded) showNotice('Tank upgraded: capacity 20 → 40.');
-    if (!beforeComplete && session.completed) showNotice('V0 complete. Keep experimenting, or press R to restart.');
-    jumpPressed = depositPressed = upgradePressed = false;
-    accumulated -= STEP;
+    if (session.lastStrike !== beforeStrike) { audio.play('strike'); if (session.lastStrike?.removed) audio.play('break'); }
+    if (session.tank.water > beforeWater) audio.play('collect'); if (session.delivered > beforeDelivered) audio.play('unload');
+    pressed.clear(); accumulated -= STEP;
+    if (session.completed) { audio.play('end'); saveRun(false); changeScreen('ended'); }
   }
-  renderer.render(session, aim, keys.has('KeyE'));
-  updateHUD();
+  if (session.time - lastVisionAt > 0.075 || lastTerrainVersion !== session.world.terrainVersion || lastVisionAt < 0) {
+    updateVision(session.world, vision, { position: playerCenter(session), aim, facing: session.facing, headlamp: session.options.headlamp, time: session.time, debugVision: session.options.debugVision });
+    lastVisionAt = session.time; lastTerrainVersion = session.world.terrainVersion;
+  }
+  renderer.render(session, aim, screen === 'playing' && down('collect'), vision);
+  if (hasRun && screen === 'playing' && session.time - lastAutoSaveAt >= 30) saveRun(false);
+  if (time - lastHUDAt > 100) { updateHUD(); lastHUDAt = time; } if (time > noticeUntil) el('notice').classList.remove('visible');
   requestAnimationFrame(tick);
 }
-
-// Inspection hooks exist only in the development build for deterministic playtests.
+audio.volumes(settings.music, settings.sfx); renderControls(); changeScreen('home'); updateHUD();
+if (window.waterHoleDesktop) { const [width, height] = settings.resolution.split('x').map(Number); void window.waterHoleDesktop.setDisplay({ fullscreen: settings.fullscreen, width, height }).catch(() => {}); }
 if (import.meta.env.DEV) {
   Object.defineProperty(window, '__waterHole', { get: () => session });
+  Object.defineProperty(window, '__waterHoleUI', { get: () => ({ screen, vision, save: saveRun, load: loadRun }) });
 }
 requestAnimationFrame(tick);

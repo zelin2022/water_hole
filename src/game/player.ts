@@ -33,16 +33,16 @@ const JUMP_SPEED = 275;
 const MAX_FALL_SPEED = 420;
 
 /** Small collision steps keep even a delayed frame from skipping thin terrain. */
-export function stepPlayer(world: World, player: Player, input: PlayerInput, dt: number): void {
+export function stepPlayer(world: World, player: Player, input: PlayerInput, dt: number, options: { climbSpeed?: number } = {}): void {
   if (!Number.isFinite(dt) || dt <= 0) return;
   const steps = Math.ceil(dt / (1 / 120));
   const step = dt / steps;
   for (let i = 0; i < steps; i++) {
-    updatePlayer(world, player, input, step, i === 0 && input.jumpPressed);
+    updatePlayer(world, player, input, step, i === 0 && input.jumpPressed, options.climbSpeed ?? CLIMB_SPEED);
   }
 }
 
-function updatePlayer(world: World, player: Player, input: PlayerInput, dt: number, jumpPressed: boolean): void {
+function updatePlayer(world: World, player: Player, input: PlayerInput, dt: number, jumpPressed: boolean, climbSpeed: number): void {
   const horizontal = Number(input.right) - Number(input.left);
   player.grounded = player.vy >= 0 && touchesFloor(world, player);
 
@@ -71,7 +71,7 @@ function updatePlayer(world: World, player: Player, input: PlayerInput, dt: numb
 
   if (player.wall) {
     player.vx = 0;
-    player.vy = (Number(input.down) - Number(input.up)) * CLIMB_SPEED;
+    player.vy = (Number(input.down) - Number(input.up)) * climbSpeed;
     moveVertical(world, player, player.vy * dt);
     if (player.grounded || !touchesWall(world, player, player.wall)) {
       player.wall = 0;
@@ -87,7 +87,7 @@ function updatePlayer(world: World, player: Player, input: PlayerInput, dt: numb
   const hitWall = moveHorizontal(world, player, player.vx * dt);
   player.grounded = player.vy >= 0 && touchesFloor(world, player);
   const contact = hitWall || (touchesWall(world, player, -1) ? -1 : touchesWall(world, player, 1) ? 1 : 0);
-  if (contact && !player.grounded && contact !== player.suppressedWall) {
+  if (contact && player.vy > 0 && !player.grounded && contact !== player.suppressedWall) {
     player.wall = contact;
     player.vy = 0;
     player.vx = 0;

@@ -114,7 +114,7 @@ describe('player movement', () => {
     expect(player.vy).toBe(0);
   });
 
-  it('attaches after jumping vertically beside a wall without horizontal input', () => {
+  it('does not attach during a rising jump beside a wall, then attaches when falling', () => {
     const world = room();
     wall(world, 30);
     const player = createPlayer(104, 168);
@@ -122,8 +122,19 @@ describe('player movement', () => {
     expect(player.wall).toBe(0);
     tick(world, player, { jumpPressed: true });
     expect(player.y).toBeLessThan(168);
-    expect(player.wall).toBe(1);
+    expect(player.wall).toBe(0);
+    expect(player.vy).toBeLessThan(0);
     expect(player.grounded).toBe(false);
+    tick(world, player, {}, 22);
+    expect(player.wall).toBe(1);
+  });
+
+  it('uses the upgraded climbing speed without changing attachment behaviour', () => {
+    const { world, player } = rightAttached();
+    const originalY = player.y;
+    stepPlayer(world, player, { ...idle, up: true }, 0.25, { climbSpeed: 120 });
+    expect(originalY - player.y).toBeCloseTo(30, 4);
+    expect(player.wall).toBe(1);
   });
 
   it('climbs up and down without a stamina limit', () => {

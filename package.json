@@ -1,8 +1,8 @@
 {
   "name": "water-hole",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
-  "description": "A small excavation and water collection game prototype.",
+  "description": "A finite excavation and water collection game demo.",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -11,13 +11,19 @@
     "start": "npm run build && electron .",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run && npm run test:desktop",
+    "test:watch": "vitest",
+    "package:win": "npm run build && node scripts/package.mjs win32 x64",
+    "package:mac": "npm run build && node scripts/package.mjs darwin arm64",
+    "package:mac:x64": "npm run build && node scripts/package.mjs darwin x64",
+    "test:desktop": "node --test tests/desktop-contract.cjs"
   },
   "devDependencies": {
+    "@electron/packager": "20.3.0",
     "electron": "44.7.2",
     "typescript": "7.0.2",
     "vite": "8.3.4",
     "vitest": "5.0.4"
-  }
+  },
+  "productName": "Water Hole"
 }

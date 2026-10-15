@@ -1,9 +1,12 @@
 # Water Hole development
 
-- v0 is a small playable test map. Its completion loop is dig, collect water, climb back, sell water, buy the capacity upgrade, then carry more water.
+- Work on `main` and push completed, tested changes to `origin/main` by default.
+- The current milestone is the provisional demo in `docs/DEMO.md`, with visual direction in `docs/ART_DIRECTION.md`. `docs/V0.md` records the completed prototype.
 - Use test-driven development: write a meaningful failing test, run it and confirm the expected failure, implement the smallest working change, then refactor with tests passing.
 - Keep terrain, liquid simulation, movement, and economy independent of rendering and Electron so they can be tested deterministically.
 - Water must remain accounted for across the world, tank, and machine. Selling must not duplicate credits.
-- The character auto-attaches to walls on airborne side contact. Detachment and wall jumps must not immediately reattach to the same wall.
-- v0 uses full visibility. Hidden resources, procedural generation, artifact searching, additional upgrades, saving, and polished art belong to later milestones.
+- The character auto-attaches on side contact only while falling. Detachment and wall jumps must not immediately reattach to the same wall. Digging while attached requires the purchased work harness.
+- Keep both cave-memory and headlamp comparisons selectable before a run, and preserve choices in saves. Sonar uses tunable two-second travel and half-second per-outline appearance/fade.
+- The demo ends at its cumulative delivery limit with a thank-you screen; do not present the limit as a mission or continue simulation after it. Artifact searching remains outside the demo.
+- The generated reference image defines visual style only. Its depicted content does not define gameplay, infrastructure, or HUD requirements.
 - Before finishing a change, run `npm test` and `npm run build`. Playtest changes to controls or rendering in the browser or Electron.

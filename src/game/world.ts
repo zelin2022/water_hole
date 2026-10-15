@@ -3,10 +3,16 @@ export interface Point {
   y: number;
 }
 
+export type Material = 0 | 1 | 2;
+
 /** A finite terrain grid. Positions outside its sealed boundary are solid. */
 export class World {
   readonly solid: Uint8Array;
   readonly water: Float32Array;
+  /** 0 = air, 1 = earth, 2 = stone. Keep edits synchronized through setMaterial. */
+  readonly material: Uint8Array;
+  /** Accumulated pickaxe damage, reset when a cell changes material or breaks. */
+  readonly damage: Float32Array;
   terrainVersion = 0;
 
   constructor(
@@ -22,11 +28,16 @@ export class World {
     }
     this.solid = new Uint8Array(width * height);
     this.water = new Float32Array(width * height);
+    this.material = new Uint8Array(width * height);
+    this.damage = new Float32Array(width * height);
 
     // Initial terrain is version zero; subsequent edits invalidate render caches.
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
-        if (this.isBoundary(x, y)) this.solid[this.index(x, y)] = 1;
+        if (this.isBoundary(x, y)) {
+          this.solid[this.index(x, y)] = 1;
+          this.material[this.index(x, y)] = 2;
+        }
       }
     }
   }
@@ -49,14 +60,23 @@ export class World {
   }
 
   setSolid(cellX: number, cellY: number, solid: boolean): void {
+    if (!this.inBounds(cellX, cellY)) return;
+    const material = this.material[this.index(cellX, cellY)] as Material;
+    this.setMaterial(cellX, cellY, solid ? material || 1 : 0);
+  }
+
+  /** Solid replacement never destroys water; the outer boundary is immutable. */
+  setMaterial(cellX: number, cellY: number, material: Material): void {
     if (!this.inBounds(cellX, cellY) || this.isBoundary(cellX, cellY)) return;
+    if (material !== 0 && material !== 1 && material !== 2) throw new RangeError('Unknown terrain material.');
     const index = this.index(cellX, cellY);
-    const next = solid ? 1 : 0;
-    if (this.solid[index] === next) return;
-    if (solid && this.water[index] > 0) {
+    if (this.material[index] === material) return;
+    if (material && this.water[index] > 0) {
       throw new Error('Cannot make a water-filled cell solid.');
     }
-    this.solid[index] = next;
+    this.material[index] = material;
+    this.solid[index] = material ? 1 : 0;
+    this.damage[index] = 0;
     this.terrainVersion++;
   }
 

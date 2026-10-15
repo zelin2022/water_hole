@@ -1,8 +1,8 @@
 # Water Hole
 
-A small 2D excavation game made with TypeScript, Canvas, Vite, and Electron. Dig into reservoirs, collect water in a tank, climb back to a machine, and trade water for a capacity upgrade.
+A finite 2D excavation game built with TypeScript, Canvas, Vite, and Electron. Break earth and stone with deliberate pickaxe strikes, collect exposed water, climb back to the exchange, and improve your equipment.
 
-This repository starts with **v0**, a handcrafted test site with full visibility. The intended game will use a finite procedural map and an artifact-finding objective.
+The **provisional demo** implements the agreed systems for playtesting and balance. Artifact searching belongs to the full game. The demo ends at a cumulative delivery limit with a thank-you screen; that limit is not presented as a mission.
 
 ## Run
 
@@ -10,34 +10,54 @@ Use Node.js 24 and npm.
 
 ```sh
 npm ci
+npm test
 npm start
 ```
 
-`npm start` builds the game and opens its Electron window. The first desktop launch downloads the Electron runtime if it is not already installed. For browser development:
+`npm start` builds and opens the desktop game. The first desktop launch downloads Electron if necessary. For browser development:
 
 ```sh
 npm run dev
 ```
 
-Open the local URL Vite prints. To use the Electron window with that running development server, run `npm run desktop:dev` in another terminal.
+Open the local URL Vite prints. Run `npm run desktop:dev` in a second terminal to use Electron with that development server.
 
-## Controls
+## Playtest options
+
+New Game offers independent comparisons for dim remembered cave outlines versus sonar-dependent darkness, and character-facing versus mouse-directed headlamps. Mouse aim visibly rotates the worker's head. The seed reproduces the same finite site; choices are retained by save/load. Browser development also offers a full-visibility checkbox for testing.
+
+The underground starter shaft is beside the exchange. Airborne wall contact attaches only while falling. Hold S to descend after attaching, then work from the shaft floor to reach the first reservoir. Digging while attached is disabled until the work-harness upgrade is purchased.
+
+## Default controls
 
 | Input | Action |
 | --- | --- |
 | A / D | Move, including air steering |
-| W / S | Climb up/down while attached to a wall |
-| Space | Small ground jump or wall jump |
-| Direction away from wall | Detach |
-| Mouse + hold left click | Aim and dig within reach |
+| W / S | Climb up/down while attached |
+| Space | Ground jump or wall jump |
+| Direction away from the wall | Detach |
+| Mouse + hold left click | Aim and repeat pickaxe strikes |
 | Hold E | Collect nearby exposed water |
-| F near hopper | Sell all carried water |
-| B near machine | Buy the larger tank for 60 credits |
-| R | Restart the test site |
+| F near the hopper | Start/stop gradual unloading |
+| B near the exchange | Open the equipment shop |
+| Q after installing sonar | Send a cave-outline pulse |
+| Escape | Pause / return from menus |
 
-Airborne side contact attaches the character to a wall automatically. Climbing is unlimited. Water is harmless. The tank starts at 20 units and upgrades to 40. One water unit earns one credit.
+Climbing is unlimited and water is harmless. The shop offers pick radius, pick damage, climb speed, tank capacity, water detection/range, wall digging, and sonar. Numerical balance is provisional. Settings include display presets/fullscreen, music/SFX volume, and keybindings. Escape remains reserved for pause/menu navigation.
 
-The v0 loop is complete after buying the upgrade and carrying more than 20 water on the next trip. You can keep experimenting afterward.
+## Saving
+
+One local slot supports manual Save/Load, Continue, autosaving every 30 seconds, and saving when returning to the menu or quitting. New Game confirms before replacing an expedition. Terrain, partial damage, water, equipment, exploration, comparison choices, and sonar/cutoff state are preserved. Browser development and the packaged desktop game use separate local storage.
+
+## Standalone packages
+
+```sh
+npm run package:win
+npm run package:mac
+npm run package:mac:x64
+```
+
+Outputs are under `release/`: Windows x64, macOS Apple Silicon, and macOS Intel respectively. Copy the whole Windows folder, then launch `Water Hole.exe`; Node and npm are not needed to run a package. Build macOS packages on the Mac. Current packages are unsigned and macOS signing/notarization remains release work. macOS packaging and playtesting have not been verified on this Windows host.
 
 ## Development
 
@@ -46,6 +66,6 @@ npm test
 npm run build
 ```
 
-Development follows test-driven development: failing behavior tests first, implementation second, refactoring with tests passing. Terrain, water, movement, economy, and the complete loop are tested independently of Canvas and Electron. Controls and rendering also receive browser/Electron playtests.
+Development follows TDD: confirm a failing behaviour test, implement, then refactor with tests passing. Terrain, water, movement, progression, saving, lighting, sonar, and detection remain independent of Canvas/Electron. `npm test` also checks the desktop bridge and display contract. Controls and rendering receive browser/desktop playtests.
 
-See [docs/V0.md](docs/V0.md) for the scope and acceptance criteria.
+See [the demo scope](docs/DEMO.md), [art direction](docs/ART_DIRECTION.md), and [Steam release preparation](docs/STEAM_DEMO_RELEASE.md). The original [v0 scope](docs/V0.md) remains as milestone history.

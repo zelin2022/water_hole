@@ -70,6 +70,37 @@ describe('World terrain', () => {
     expect(world.isSolid(2, 3)).toBe(false);
     expect(world.terrainVersion).toBe(0);
   });
+
+  it('tracks material and partial damage together with collision', () => {
+    const world = new World(8, 6);
+
+    world.setMaterial(2, 3, 2);
+    const cell = world.index(2, 3);
+    expect(world.material[cell]).toBe(2);
+    expect(world.isSolid(2, 3)).toBe(true);
+    world.damage[cell] = 1;
+    world.setSolid(2, 3, true);
+    expect(world.material[cell]).toBe(2);
+    expect(world.damage[cell]).toBe(1);
+    world.setMaterial(2, 3, 1);
+    expect(world.damage[cell]).toBe(0);
+    world.setSolid(2, 3, false);
+    expect(world.material[cell]).toBe(0);
+    expect(world.damage[cell]).toBe(0);
+    world.setSolid(2, 3, true);
+    expect(world.material[cell]).toBe(1);
+  });
+
+  it('keeps material setters from burying water or opening the boundary', () => {
+    const world = new World(8, 6);
+    world.water[world.index(2, 3)] = 0.75;
+
+    expect(() => world.setMaterial(2, 3, 2)).toThrow(/water/i);
+    expect(world.material[world.index(2, 3)]).toBe(0);
+    world.setMaterial(0, 3, 0);
+    expect(world.material[world.index(0, 3)]).not.toBe(0);
+    expect(world.isSolid(0, 3)).toBe(true);
+  });
 });
 
 function filledWorld(): World {
