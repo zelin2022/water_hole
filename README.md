@@ -2,7 +2,7 @@
 
 A finite 2D excavation game built with TypeScript, Canvas, Vite, and Electron. Break layered terrain with deliberate pickaxe strikes, collect exposed water, climb back to the exchange, and improve your equipment. New expeditions reach **2000 metres** on the depth display.
 
-The **demo release candidate** implements the agreed systems for playtesting and balance. Artifact searching belongs to the full game. New expeditions end at 600 cumulative water delivered with a thank-you screen; earlier saves retain their 400 limit. That limit is not presented as a mission. Public release still needs a feedback destination and native package checks; see [the local release checklist](docs/DEMO_RELEASE.md).
+The **demo release candidate** implements the agreed systems for playtesting and balance. Artifact searching belongs to the full game. New expeditions end at 600 cumulative water delivered with a thank-you screen; earlier saves retain their 400 limit. That limit is not presented as a mission. Online reports and surveys have a verified public receiver; edge rate limiting and native package checks remain before release. See [the local release checklist](docs/DEMO_RELEASE.md).
 
 ## Run
 
@@ -91,9 +91,9 @@ One local slot supports manual Save/Load, Continue, autosaving every 30 seconds,
 
 Press **F8** to pause and report a bug with an automatically captured game screenshot. Preview or remove the screenshot, describe the issue, and review the included game details. The shortcut is rebindable. Reports and screenshots can be downloaded; custom image uploads are absent. Drafts persist locally. The ending congratulates you and offers an optional five-star rating and suggestions. The gated developer panel includes **Warp to demo end** for testing it.
 
-Online submission is implemented but not connected to a public receiver. Set `VITE_FEEDBACK_API_URL` to the actual HTTPS service origin after deployment and verification setup, then rebuild. Sending requests a human check and submits only after an explicit player action. Local copies/exports remain available while unconfigured. See [feedback design and remaining hosting decision](docs/FEEDBACK.md) and [the separate receiver](feedback-server/README.md).
+The v0.1.25 client uses `VITE_FEEDBACK_API_URL=https://waterhole-feedback.epsiloneridanigames.com` from shared `.env`. Real human-verified screenshot reports and ending surveys have reached the private receiver through Cloudflare Tunnel. Sending requests a human check and submits only after an explicit player action; local copies/exports remain available if online reporting fails. The edge rate rule and packaged Electron verification remain pending. See [feedback deployment and verification](docs/FEEDBACK.md) and [the separate receiver](feedback-server/README.md).
 
-Configure the optional compile-time `VITE_FEEDBACK_URL` with the actual public HTTPS feedback destination before releasing. `VITE_STORE_URL` can point to the actual Steam page once it exists. Missing or invalid URLs leave the corresponding links absent; changing them requires a rebuild. The feedback destination is still pending, so export alone is not yet a complete submission channel.
+The optional compile-time `VITE_FEEDBACK_URL` can link to a separate HTTPS support page; it is not required for in-game submission. `VITE_STORE_URL` can point to the actual Steam page once it exists. Missing or invalid URLs leave the corresponding links absent; changing them requires a rebuild.
 
 ## Standalone packages
 

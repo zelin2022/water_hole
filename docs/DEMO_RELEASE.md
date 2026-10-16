@@ -1,6 +1,6 @@
 # Demo release candidate
 
-The current test candidate is **v0.1.24**. This document tracks the local demo preparation accepted for this pass. Steam account/page setup, demo upload, Valve review, and public Steam release follow later and will be handled by the developer. Artifact searching and further systems belong to the full version.
+The current test candidate is **v0.1.25**. This document tracks the local demo preparation accepted for this pass. Steam account/page setup, demo upload, Valve review, and public Steam release follow later and will be handled by the developer. Artifact searching and further systems belong to the full version.
 
 The requested 3–5-person pre-release playtest is omitted. A spare computer is not required for the local checks below. Public demo readiness is still conditional on the remaining items; a passing browser test or model benchmark does not verify a native package.
 
@@ -10,11 +10,13 @@ The requested 3–5-person pre-release playtest is omitted. A spare computer is 
 - [x] Check the persistent **Demo + version** identification in gameplay, menus, and the ending screen against the package version.
 - [x] Check creator/asset credits in the browser and validate the application icon files and package metadata. Native window/taskbar appearance remains part of native QA below. Keep the generated reference image's role limited to visual direction; it is not an implemented scene or marketing screenshot.
 - [x] Check F8 bug reporting, automatic game screenshot preview/removal, report/save exports, and locally persisted drafts. Check the congratulations ending's five-star/suggestions survey and gated developer ending warp. Local HTTP/SQLite integration passes with the human provider mocked.
-- [ ] Choose and deploy the public HTTPS receiver, configure real Turnstile keys and `VITE_FEEDBACK_API_URL`, then verify actual submission from packaged Windows/Mac builds. **Hosting and live verification are still pending.** No service has been deployed to the VPN gateway. See [feedback design](FEEDBACK.md).
+- [x] Deploy the bounded HTTPS receiver through Cloudflare Tunnel, configure real Turnstile keys and `VITE_FEEDBACK_API_URL`, and verify real server-validated screenshot reports and ending surveys from an opaque-origin browser context. Public visitor-IP limits and forged-header rejection also pass. See [feedback deployment evidence](FEEDBACK.md).
+- [ ] Configure and verify the Cloudflare edge rate rule for `/api/reports` and `/api/surveys`.
+- [ ] Verify actual report and survey submission from the packaged Windows/Mac game, including a human check, cancellation, draft preservation, and success confirmation. Browser verification does not establish native Electron compatibility.
 - [ ] Add the optional `VITE_STORE_URL` once the actual Steam page exists, then check the ending wishlist link. An absent store URL is expected before Steam setup and produces no placeholder link.
 - [x] Run the short calculation benchmark and inspect timings, CPU load, observed memory, and conservation. Dated results are retained locally. Separately profile browser rendering in normal, deep-tunnel, and dense-water scenes.
-- [x] Run `npm test`, `npm run build`, and `npm run build:release` on the candidate. Confirm release mode has no environment override setting `VITE_DEV_TOOLS=true`.
-- [x] Build and inspect the public Windows package with `npm run package:win:release`. The app archive contains only compiled assets, desktop bridge, and package identity; source, tests, development dependencies, local saves, and credentials are absent.
+- [x] Run `npm test`, `npm run build`, and `npm run build:release` for v0.1.25: all 493 tests and both builds pass. The release bundle excludes developer controls; no environment override enables them.
+- [x] Build and inspect the v0.1.25 public Windows package using the release build and `node scripts/package.mjs win32 x64`. Its archive contains only compiled assets, desktop bridge, and package identity, with the configured feedback origin and no developer controls, source, tests, development dependencies, local saves, or credentials. Native execution remains pending below.
 - [x] Verify release backtick access is absent and an old omni-vision save cannot restore full visibility. Local provisional builds retain developer tools for ongoing tuning.
 - [x] Check the frozen thank-you ending in the release browser build: no further simulation or delivery; feedback access works; loading a completed save returns to the ending; New Game starts a new expedition after its replacement confirmation. Also verify settings and saves survive closing/restarting a separate persistent browser profile.
 - [ ] Complete a native Windows launch/settings/save/relaunch/update check, or explicitly restrict the candidate's distribution status until it is possible. **Native Windows QA remains unverified on this host:** the previous launch was blocked by DeviceGuard. Do not disable or bypass that policy for testing.
@@ -35,7 +37,7 @@ npm run package:win:release
 
 Use the **`:release` package commands** for the public candidate. The regular `package:win`/`package:mac` commands intentionally produce provisional builds whose current `.env` enables the developer panel. Release mode reads `.env.release`, which disables it; shell environment values take precedence, so check overrides when building.
 
-`VITE_FEEDBACK_URL` and `VITE_STORE_URL` are optional compile-time configuration. Set them to the actual public HTTPS destinations before the corresponding release build. Invalid or missing values leave those buttons absent. These are links opened only after a player click; the game has no automatic telemetry or report upload. Changing either value requires rebuilding and repackaging. Do not use a guessed URL or publish a nonworking placeholder as the feedback channel.
+Shared `.env` configures `VITE_FEEDBACK_API_URL=https://waterhole-feedback.epsiloneridanigames.com` for in-game reports and surveys. Rebuild and repackage after changing it. Both paths have passed real Turnstile server validation and storage checks; the edge rule and native verification remain pending. The optional `VITE_FEEDBACK_URL` links to a separate HTTPS support page, while `VITE_STORE_URL` can link to the actual Steam page once available. Missing or invalid optional URLs leave those buttons absent. Feedback sends only after the player chooses Send; there is no automatic report upload.
 
 ## Simple alternatives to a spare machine
 
