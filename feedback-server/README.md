@@ -1,6 +1,6 @@
 # Local feedback service
 
-This folder contains the demo's private feedback receiver. It is deployed behind an outbound Cloudflare Tunnel with submissions closed pending live verification. See [deployment status](../docs/FEEDBACK.md). No service secrets are included in the repository.
+This folder contains the demo's private feedback receiver. It is deployed behind an outbound Cloudflare Tunnel. A real Turnstile-validated screenshot report and public visitor-IP limits have passed; submissions are enabled for controlled live checks. Live survey verification, the edge rate rule, client endpoint configuration, and native packaged-game checks remain pending. See [deployment evidence and remaining work](../docs/FEEDBACK.md). No service secrets are included in the repository.
 
 The existing AWS machine is a VPN/home-access gateway. Its TCP/UDP 443, UDP 585, SSH and restricted home-access ports remain reserved. Do not replace its reverse proxy, Docker networks, firewall, Tailscale configuration or VPN containers to host feedback.
 
@@ -15,7 +15,7 @@ node feedback-server/start.mjs
 
 The second command listens only on `127.0.0.1:3210`. With no configuration, `GET /health` works and submissions return 503. Tests inject an in-memory store and verification adapter into an ephemeral loopback server; that bypass is not exposed as a runtime flag.
 
-A future deployment needs a stable HTTPS origin and a Turnstile widget for that hostname. Copy `.env.example` into a private file outside the repository, fill the required fields, and explicitly set `SUBMISSIONS_ENABLED=1`. Node supports loading that private file with `node --env-file=/private/path/feedback.env feedback-server/start.mjs`. Keep the secret key server-side; the site key is public. Never put SSH keys or service secrets into the game, repository, reports or logs.
+A fresh deployment needs a stable HTTPS origin and a Turnstile widget for that hostname. Copy `.env.example` into a private file outside the repository, fill the required fields, and keep `SUBMISSIONS_ENABLED=0` until deployment checks pass. Set it to `1` only for live verification or operation. Node supports loading that private file with `node --env-file=/private/path/feedback.env feedback-server/start.mjs`. Keep the secret key server-side; the site key is public. Never put SSH keys or service secrets into the game, repository, reports or logs.
 
 Required configuration: `PUBLIC_ORIGIN` (HTTPS origin with no path or credentials; a dedicated public HTTPS port such as 8443 is supported), `TURNSTILE_HOSTNAME` (exact matching hostname, without a port), `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`, and explicitly `SUBMISSIONS_ENABLED=1`. Set `FEEDBACK_DB` to a private persistent directory. Runtime port changes must stay unprivileged; binding to all interfaces is not supported. `SUBMISSIONS_ENABLED=0` is the emergency switch; restart the process after changing environment variables. Supporting a public URL with a separate port does not open that port on the server.
 
@@ -38,7 +38,7 @@ The anonymous API permits Electron's `Origin: null` and optional explicitly list
 
 After the player chooses Send, the game embeds `PUBLIC_ORIGIN/verify?nonce=UUID&action=bug_report` or `action=demo_survey`. This page serves a real Turnstile widget using the public site key, then posts `{ type: "water-hole-feedback-verified", nonce, action, token }` to its parent. A configured public site key keeps this page available while submissions are closed; closing the API still prevents provider validation calls and inbox writes. Because Electron uses a file origin, the child uses `postMessage` with `*`; the parent **must** check the exact iframe window, HTTPS origin, fresh nonce and expected action before accepting the token. Successful verification completes that requested submission; cancelling keeps the draft local.
 
-The server validates the token with Cloudflare's verification API and requires success, exact expected hostname/action, and an age of at most five minutes (allowing 30 seconds clock skew). Network errors, invalid JSON, rejected or expired tokens prevent insertion. Tokens are single-use; a retry after token expiry should obtain fresh verification while retaining its report UUID. No shared client secret exists.
+The server validates the token with Cloudflare's verification API and requires success, exact expected hostname/action, and an age of at most five minutes (allowing 30 seconds clock skew). Network errors, invalid JSON, rejected or expired tokens prevent insertion. Tokens are single-use; a retry after token expiry should obtain fresh verification while retaining its report UUID. No shared client secret exists. Managed Turnstile can finish automatically; the parent closes the verification dialog after accepting its callback, then submits the feedback and displays the API result.
 
 ## Bounded resource use
 
@@ -65,7 +65,7 @@ For deployment, `deploy/` provides a receiver unit, a separate outbound tunnel u
 
 The two unprivileged services have 128 MiB individual limits; the private logger has 32 MiB. Their shared slice caps the total at 256 MiB and half a CPU, with no swap expansion. The code filesystem is read-only and the receiver's mode-0700 state directory is private. Logs rotate with a 16 MiB persistent budget and 2 MiB files; this can exceed the budget by active-file granularity and is not a filesystem quota. Runtime logs have a separate fallback budget. No request bodies or tokens should be logged.
 
-Before installing, check units with `systemd-analyze verify` on the target Linux host and verify downloaded runtime checksums against official vendor metadata. Exercise representative screenshots and concurrent requests under the actual caps before enabling public submissions. Contract tests check deployment policies, not live Linux service behavior. The current AWS deployment has passed these startup and bounded screenshot checks; live verification and launch readiness are tracked in `docs/FEEDBACK.md`.
+Before installing, check units with `systemd-analyze verify` on the target Linux host and verify downloaded runtime checksums against official vendor metadata. Exercise representative screenshots and concurrent requests under the actual caps before enabling public submissions. Contract tests check deployment policies, not live Linux service behavior. The current AWS deployment has passed these startup and bounded screenshot checks, a real server-validated bug report, and public visitor-IP limiting. Survey, edge-rule and native client verification remain tracked in `docs/FEEDBACK.md`.
 
 For a fresh host installation, `deploy/install-host.sh` accepts three paths: a source tar archive containing this repository's `feedback-server/`, a private receiver environment file, and a file containing only the tunnel token. Review the script, transfer these files into a private staging directory over verified SSH, and run it as root:
 
