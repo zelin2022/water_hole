@@ -1,6 +1,6 @@
 # Local feedback service
 
-This folder contains the demo's private feedback receiver, deployed behind an outbound Cloudflare Tunnel at `https://waterhole-feedback.epsiloneridanigames.com`. Real Turnstile-validated screenshot reporting, ending surveys, and public visitor-IP limiting have passed. The v0.1.25 client is configured for this origin; the edge rate rule and native packaged-game checks remain pending. See [deployment evidence and remaining work](../docs/FEEDBACK.md). No service secrets are included in the repository.
+This folder contains the demo's private feedback receiver, deployed behind an outbound Cloudflare Tunnel at `https://waterhole-feedback.epsiloneridanigames.com`. Real Turnstile-validated screenshot reporting, ending surveys, receiver visitor-IP limiting, and Cloudflare edge rate limiting on both submission paths have passed. The v0.1.25 client is configured for this origin; native packaged-game checks remain pending. See [deployment evidence and remaining work](../docs/FEEDBACK.md). No service secrets are included in the repository.
 
 The existing AWS machine is a VPN/home-access gateway. Its TCP/UDP 443, UDP 585, SSH and restricted home-access ports remain reserved. Do not replace its reverse proxy, Docker networks, firewall, Tailscale configuration or VPN containers to host feedback.
 
