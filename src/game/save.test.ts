@@ -169,6 +169,97 @@ function corrupt(change: (data: any) => void) {
   return JSON.stringify(data);
 }
 
+describe('expanded water tank saves', () => {
+  function transferWorldWater(session: Session, amount: number): void {
+    let remaining = amount;
+    for (let index = 0; index < session.world.water.length && remaining > 0; index++) {
+      const transfer = Math.min(remaining, session.world.water[index]);
+      session.world.water[index] -= transfer;
+      remaining -= transfer;
+    }
+    expect(remaining).toBeCloseTo(0, 5);
+  }
+
+  it.each([1, 2])('preserves historical level zero, one and two tanks and their actual spending in version %i', version => {
+    for (const [level, capacity, spent] of [[0, 20, 0], [1, 40, 60], [2, 60, 180]] as const) {
+      const original = createShallowSession({ seed: 42 });
+      transferWorldWater(original, 217);
+      original.delivered = 200;
+      original.tank.water = 17;
+      original.tank.capacity = capacity;
+      original.tank.upgrades.capacity = level;
+      original.tank.upgraded = level > 0;
+      original.tank.credits = original.delivered - spent;
+      original.unloading = level > 0;
+      const restored = deserializeSession(version === 1 ? serializeLegacySession(original) : serializeSession(original));
+      expect(restored.tank).toEqual(original.tank);
+      expect(restored.delivered).toBe(200);
+      expect(restored.devCreditAdjustment).toBe(0);
+      expect(restored.unloading).toBe(original.unloading);
+      expect(restored.world.width).toBe(original.world.width);
+      expect(restored.world.height).toBe(original.world.height);
+      expect(restored.world.cellSize).toBe(original.world.cellSize);
+      expect(restored.world.solid).toEqual(original.world.solid);
+      expect(restored.world.material).toEqual(original.world.material);
+      expect(restored.world.damage).toEqual(original.world.damage);
+      expect(restored.world.water).toEqual(original.world.water);
+      expect(restored.player).toEqual(original.player);
+      expect(restored.hopper).toEqual(original.hopper);
+      expect(restored.options).toEqual(original.options);
+      expect(restored.explored).toEqual(original.explored);
+      const expectedFullTime = 0.8 * (1 + level / 9);
+      expect(upgradeStats(restored.tank).unloadRate).toBeCloseTo(capacity / expectedFullTime, 8);
+      expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(restored.initialWater, 5);
+    }
+  });
+
+  it.each([1, 2])('round-trips partly filled, full and actively unloading 200-unit tanks in version %i', version => {
+    for (const [water, unloading] of [[137.25, false], [200, false], [175.5, true]] as const) {
+      const original = createShallowSession({ seed: 42 });
+      setDevCredits(original, 1000);
+      for (let level = 0; level < 9; level++) expect(buyUpgrade(original.tank, 'capacity')).toBe(true);
+      transferWorldWater(original, water + 50);
+      original.delivered = 50;
+      original.tank.credits += 50;
+      original.tank.water = water;
+      original.unloading = unloading;
+      const restored = deserializeSession(version === 1 ? serializeLegacySession(original) : serializeSession(original));
+      expect(restored.tank).toEqual(original.tank);
+      expect(restored.tank).toMatchObject({ capacity: 200, credits: 780, water, upgraded: true });
+      expect(restored.tank.upgrades.capacity).toBe(9);
+      expect(restored.unloading).toBe(unloading);
+      expect(restored.delivered).toBe(50);
+      expect(restored.devCreditAdjustment).toBe(1000);
+      expect(upgradeStats(restored.tank).unloadRate).toBe(125);
+      expect(restored.world.solid).toEqual(original.world.solid);
+      expect(restored.world.material).toEqual(original.world.material);
+      expect(restored.world.damage).toEqual(original.world.damage);
+      expect(restored.world.water).toEqual(original.world.water);
+      expect(restored.player).toEqual(original.player);
+      expect(restored.hopper).toEqual(original.hopper);
+      expect(restored.options).toEqual(original.options);
+      expect(restored.explored).toEqual(original.explored);
+      expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(restored.initialWater, 5);
+    }
+  });
+
+  it.each([1, 2])('rejects excessive, fractional, mismatched and overfilled tanks in version %i', version => {
+    const session = createShallowSession({ seed: 42 });
+    const original = version === 1 ? serializeLegacySession(session) : serializeSession(session);
+    for (const level of [-1, 0.5, 10, null, '1']) {
+      const data = JSON.parse(original);
+      data.session.tank.upgrades.capacity = level;
+      expect(() => deserializeSession(JSON.stringify(data))).toThrow(/upgrade level/);
+    }
+    for (const [level, capacity, water] of [[9, 180, 0], [9, 200, 200.01], [0, 40, 0], [1, 60, 0]]) {
+      const data = JSON.parse(original);
+      Object.assign(data.session.tank, { capacity, water, upgraded: level > 0 });
+      data.session.tank.upgrades.capacity = level;
+      expect(() => deserializeSession(JSON.stringify(data))).toThrow(/tank capacity/);
+    }
+  });
+});
+
 describe('lamp equipment saves', () => {
   const lampIds = ['torsoLamp', 'headlampWidth', 'headlampDepth'] as const;
 
@@ -529,7 +620,7 @@ describe('versioned local saves', () => {
     setOmniVision(session, true);
     const restored = deserializeSession(serializeSession(session));
     expect(restored.tank.credits).toBe(2.5);
-    expect(restored.devCreditAdjustment).toBe(-2.5);
+    expect(restored.devCreditAdjustment).toBe(-52.5);
     expect(restored.tank.upgrades.detector).toBe(1);
     expect(restored.options.debugVision).toBe(true);
     expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(restored.initialWater, 2);

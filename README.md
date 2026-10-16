@@ -65,6 +65,8 @@ Jump power and climbing assist each offer **seven purchases**, costing 175 credi
 
 Torso-lamp radius, headlamp width, and headlamp depth each offer **two purchases** at 20 then 35 credits. Each level adds 20% to the previous value, reaching 44% above base. Starting headlamp depth is reduced by 30% to 126 world pixels, and its full beam angle by 10% to 64.8 degrees. Torso radius starts at 55 pixels. Older saves without lamp levels receive unupgraded lamps while preserving their site and progress.
 
+Tank capacity offers **nine purchases**, adding 20 water each time: 20 at the start, up to 200. Prices rise from 10 to 50 credits in increments of 5, totaling 270. Collection remains 36 water per second. Larger tanks unload faster, but take longer to empty: full-tank unloading time rises evenly from **0.8 seconds at 20 water to 1.6 seconds at 200**. Older capacity levels retain their 20/40/60 capacities and actual water and credits. The backpack's visible growth stays bounded at its previous maximum size.
+
 Settings include display presets/fullscreen, music/SFX volume, and keybindings. Escape remains reserved for pause/menu navigation.
 
 The original synthesized ambient music varies continuously with current depth and tank fill. Empty tanks favour exploration; fuller tanks bring in a returning motif, while lower tones build across the first 1600 metres. Layers blend smoothly rather than restarting the score when a boundary is crossed. Music and SFX keep separate volume controls.

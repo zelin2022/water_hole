@@ -2,6 +2,36 @@ import { describe, expect, it } from 'vitest';
 import { Renderer } from './render';
 import { World } from './game/world';
 import type { Session } from './game/session';
+import { createPlayer } from './game/player';
+import { createTank } from './game/economy';
+
+describe('tank equipment rendering', () => {
+  it('grows through all ten sizes without extending above the worker or changing carried water', () => {
+    const shapes: number[][] = [];
+    const context = new Proxy<Record<string, unknown>>({
+      roundRect: (...values: number[]) => shapes.push(values),
+    }, { get: (target, key) => target[String(key)] ?? (() => {}) });
+    const renderer = Object.assign(Object.create(Renderer.prototype), { context }) as {
+      drawWorker(session: Session, aim: { x: number; y: number }): void;
+    };
+    const tank = createTank();
+    const session = { player: createPlayer(72, 88), tank, facing: 1, time: 0,
+      strikeTime: -1, lastStrike: null } as Session;
+    let previousHeight = 0;
+    for (let level = 0; level <= 9; level++) {
+      tank.upgrades.capacity = level; tank.capacity = 20 + level * 20; tank.water = tank.capacity;
+      shapes.length = 0;
+      renderer.drawWorker(session, { x: 200, y: 104 });
+      const [, top, width, height] = shapes[0];
+      expect(top).toBeGreaterThanOrEqual(5);
+      expect(width).toBeLessThanOrEqual(8.4);
+      expect(height).toBeLessThanOrEqual(18);
+      expect(height).toBeGreaterThan(previousHeight);
+      expect(tank.water).toBe(tank.capacity);
+      previousHeight = height;
+    }
+  });
+});
 
 /** Only opacity is relevant here; illustration paths are checked in the browser. */
 class OpacityCanvas {

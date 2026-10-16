@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { World } from './world';
 import { totalWater } from './water';
-import { buyUpgrade, canBuyUpgrade, collectIntoTank, createTank, CREDIT_EPSILON, depositAtHopper, UPGRADE_DEFINITIONS, upgradeAvailability, upgradeStats, type UpgradeId } from './economy';
+import { BASE_UNLOAD_RATE, buyUpgrade, canBuyUpgrade, collectIntoTank, createTank, CREDIT_EPSILON, depositAtHopper, UPGRADE_DEFINITIONS, upgradeAvailability, upgradeStats, type UpgradeId } from './economy';
 
 describe('tank and incremental sales', () => {
   it('starts empty with no equipment upgrades', () => {
@@ -150,18 +150,48 @@ describe('equipment purchases', () => {
     }
   });
 
-  it('charges each level once, caps progression, and preserves carried water', () => {
-    const tank = createTank(); tank.water = 10; tank.credits = 59;
+  it('offers nine twenty-unit capacity purchases, caps at 200, and never changes carried water or other equipment', () => {
+    const tank = createTank(); tank.water = 10; tank.credits = 9;
     expect(buyUpgrade(tank, 'capacity')).toBe(false);
-    tank.credits = 200;
-    expect(buyUpgrade(tank, 'capacity')).toBe(true);
-    expect(tank.capacity).toBe(40);
-    expect(tank.credits).toBe(140);
-    expect(buyUpgrade(tank, 'capacity')).toBe(true);
-    expect(tank.capacity).toBe(60);
-    expect(tank.credits).toBe(20);
+    expect(UPGRADE_DEFINITIONS.find(definition => definition.id === 'capacity')!.costs)
+      .toEqual([10, 15, 20, 25, 30, 35, 40, 45, 50]);
+    const initialStats = upgradeStats(tank);
+    tank.credits = 270;
+    for (let level = 0; level <= 9; level++) {
+      if (level > 0) expect(buyUpgrade(tank, 'capacity')).toBe(true);
+      expect(tank.capacity).toBe(20 + 20 * level);
+      expect(tank.upgrades.capacity).toBe(level);
+      const stats = upgradeStats(tank);
+      expect(stats.capacity).toBe(tank.capacity);
+      expect(stats).toEqual({ ...initialStats, capacity: stats.capacity, unloadRate: stats.unloadRate });
+      expect(tank.water).toBe(10);
+      expect(tank.upgraded).toBe(level > 0);
+      expect(Object.entries(tank.upgrades).every(([id, value]) => id === 'capacity' || value === 0)).toBe(true);
+    }
+    expect(tank.credits).toBe(0);
+    tank.credits = 100;
+    expect(upgradeAvailability(tank, 'capacity')).toBe('unavailable');
     expect(buyUpgrade(tank, 'capacity')).toBe(false);
-    expect(tank.water).toBe(10);
+    expect(tank.capacity).toBe(200);
+    expect(tank.credits).toBe(100);
+  });
+
+  it('increases unloading speed each level while smoothly doubling full-tank time from 0.8 to 1.6 seconds', () => {
+    expect(BASE_UNLOAD_RATE).toBe(25);
+    const tank = createTank(); tank.credits = 270;
+    let previousRate = 0, previousTime = 0;
+    for (let level = 0; level <= 9; level++) {
+      if (level > 0) expect(buyUpgrade(tank, 'capacity')).toBe(true);
+      const stats = upgradeStats(tank);
+      const fullTankTime = stats.capacity / stats.unloadRate;
+      expect(stats.unloadRate).toBeGreaterThan(previousRate);
+      expect(fullTankTime).toBeGreaterThan(previousTime);
+      expect(fullTankTime).toBeCloseTo(0.8 * (1 + level / 9), 10);
+      previousRate = stats.unloadRate;
+      previousTime = fullTankTime;
+    }
+    expect(previousRate).toBe(125);
+    expect(previousTime).toBeCloseTo(1.6, 10);
   });
 
   it('requires the detector before range purchases and grants one-time equipment once', () => {
@@ -242,6 +272,6 @@ describe('equipment purchases', () => {
       for (let level = 0; level < levels; level++) expect(buyUpgrade(tank, id)).toBe(true);
     }
     expect(tank.upgrades).toMatchObject({ digRadius: 7, digDamage: 3, digSpeed: 3, capacity: 1, wallDig: 1 });
-    expect(tank.credits).toBe(14);
+    expect(tank.credits).toBe(64);
   });
 });

@@ -1,5 +1,5 @@
 import { createPlayer, DEFAULT_STEP_HEIGHT_CELLS, stepPlayer, type Player, type PlayerInput } from './player';
-import { buyUpgrade, collectIntoTank, createTank, depositAtHopper, upgradeStats, type Tank, type UpgradeId } from './economy';
+import { BASE_UNLOAD_RATE, buyUpgrade, collectIntoTank, createTank, depositAtHopper, upgradeStats, type Tank, type UpgradeId } from './economy';
 import type { Point, World } from './world';
 import { stepWater, totalWater } from './water';
 import { damageStrike, DIG_REACH_PADDING } from './digging';
@@ -12,7 +12,8 @@ export const DIG_INTERVAL = 0.48;
 export const DIG_WINDUP = 0.12;
 export const COLLECTION_RADIUS = 28;
 export const HOPPER_RANGE = 96;
-export const UNLOAD_RATE = 25;
+/** Starter rate retained for callers; actual unloading uses the installed tank. */
+export const UNLOAD_RATE = BASE_UNLOAD_RATE;
 export const DEMO_DELIVERY_LIMIT = 400;
 
 export interface GameInput extends PlayerInput {
@@ -139,7 +140,7 @@ export function stepSession(session: Session, input: GameInput, dt: number): voi
   else if (input.depositPressed) session.unloading = !session.unloading;
   if (session.unloading) {
     session.delivered += depositAtHopper(session.tank, center, session.hopper, HOPPER_RANGE,
-      Math.min(dt * UNLOAD_RATE, DEMO_DELIVERY_LIMIT - session.delivered));
+      Math.min(dt * upgradeStats(session.tank).unloadRate, DEMO_DELIVERY_LIMIT - session.delivered));
     if (session.tank.water <= 1e-8) session.unloading = false;
   }
   if (session.delivered >= DEMO_DELIVERY_LIMIT - 1e-8) {

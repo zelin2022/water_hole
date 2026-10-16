@@ -486,7 +486,8 @@ export class Renderer {
         ctx.moveTo(side * 3 - stride * side - 1, 31); ctx.lineTo(side * 3 - stride * side + 2, 31); ctx.stroke();
       }
     }
-    const th = 12 + session.tank.upgrades.capacity * 3; const tw = 6 + session.tank.upgrades.capacity * 1.2;
+    const tankScale = 2 * clamp(session.tank.upgrades.capacity / 9, 0, 1);
+    const th = 12 + tankScale * 3; const tw = 6 + tankScale * 1.2;
     ctx.fillStyle = '#89958c'; ctx.beginPath(); ctx.roundRect(-10 - tw / 2, 23 - th, tw, th, 2); ctx.fill();
     ctx.fillStyle = '#43575b'; ctx.fillRect(-9 - tw / 2, 25 - th, tw - 2, th - 4);
     const fill = (th - 4) * clamp(session.tank.water / session.tank.capacity, 0, 1);

@@ -133,9 +133,9 @@ describe('provisional development controls', () => {
     expect(buyUpgrade(session.tank, 'capacity')).toBe(true);
     expect(setDevCredits(session, 5.25)).toBe(true);
     expect(session.tank.credits).toBe(5.25);
-    expect(session.devCreditAdjustment).toBe(65.25);
+    expect(session.devCreditAdjustment).toBe(15.25);
     expect(setDevCredits(session, 0)).toBe(true);
-    expect(session.devCreditAdjustment).toBe(60);
+    expect(session.devCreditAdjustment).toBe(10);
   });
 
   it('allows later water sales without changing their credit or water accounting', () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { World } from './world';
-import { buyUpgrade, createTank } from './economy';
+import { buyUpgrade, createTank, upgradeStats } from './economy';
 import { createPlayer } from './player';
 import { totalWater } from './water';
 import { createSession, DEMO_DELIVERY_LIMIT, stepSession, type GameInput, type Session } from './session';
@@ -28,6 +28,25 @@ function advance(session: Session, seconds: number, input: Partial<GameInput> = 
   for (let i = 0; i < Math.round(seconds * 60); i++) {
     stepSession(session, { ...idle, ...input, depositPressed: i === 0 && !!input.depositPressed }, 1 / 60);
   }
+}
+
+function advanceExact(session: Session, seconds: number, dt: number, input: Partial<GameInput> = {}) {
+  let elapsed = 0;
+  while (elapsed < seconds - 1e-10) {
+    const step = Math.min(dt, seconds - elapsed);
+    stepSession(session, { ...idle, ...input, depositPressed: elapsed === 0 && !!input.depositPressed }, step);
+    elapsed += step;
+  }
+}
+
+function fullTankAtLevel(level: number): Session {
+  const session = fixture();
+  session.tank.credits = 270;
+  for (let purchase = 0; purchase < level; purchase++) expect(buyUpgrade(session.tank, 'capacity')).toBe(true);
+  session.tank.credits = 0;
+  session.tank.water = session.tank.capacity;
+  session.initialWater = session.tank.water;
+  return session;
 }
 
 describe('demo session', () => {
@@ -106,6 +125,78 @@ describe('demo session', () => {
     expect(session.tank.water).toBeCloseTo(0, 6);
     advance(session, 1, { depositPressed: true });
     expect(session.tank.credits).toBeCloseTo(20, 6);
+  });
+
+  it.each([0, 4, 9])('unloads a full level-%i tank at its upgraded rate, independently of frame duration', level => {
+    for (const dt of [1 / 120, 0.037]) {
+      const session = fullTankAtLevel(level);
+      const capacity = session.tank.capacity;
+      const fullTime = 0.8 * (1 + level / 9);
+      advanceExact(session, fullTime / 4, dt, { depositPressed: true });
+      expect(session.tank.water).toBeCloseTo(capacity * 0.75, 6);
+      expect(session.delivered).toBeCloseTo(capacity * 0.25, 6);
+      expect(session.tank.credits).toBeCloseTo(session.delivered, 6);
+      expect(totalWater(session.world) + session.tank.water + session.delivered).toBeCloseTo(session.initialWater, 5);
+      advanceExact(session, fullTime * 0.75 - 0.01, dt);
+      expect(session.tank.water).toBeGreaterThan(0);
+      stepSession(session, idle, 0.01);
+      expect(session.tank.water).toBeCloseTo(0, 6);
+      expect(session.unloading).toBe(false);
+      expect(session.delivered).toBeCloseTo(capacity, 6);
+      expect(session.tank.credits).toBeCloseTo(capacity, 6);
+      advanceExact(session, 0.3, dt, { depositPressed: true });
+      expect(session.tank.credits).toBeCloseTo(capacity, 6);
+      expect(session.completed).toBe(false);
+    }
+  });
+
+  it.each([0, 4, 9])('cancels and resumes level-%i unloading without losing water or duplicating credits', level => {
+    const session = fullTankAtLevel(level);
+    const { unloadRate } = upgradeStats(session.tank);
+    stepSession(session, { ...idle, depositPressed: true }, 0.1);
+    expect(session.tank.credits).toBeCloseTo(unloadRate * 0.1, 6);
+    const snapshot = { water: session.tank.water, credits: session.tank.credits, delivered: session.delivered };
+    stepSession(session, { ...idle, depositPressed: true }, 0.1);
+    advanceExact(session, 0.2, 1 / 60);
+    expect(session.unloading).toBe(false);
+    expect(session.tank).toMatchObject({ water: snapshot.water, credits: snapshot.credits });
+    expect(session.delivered).toBe(snapshot.delivered);
+    stepSession(session, { ...idle, depositPressed: true }, 0.1);
+    expect(session.delivered).toBeCloseTo(unloadRate * 0.2, 6);
+    session.player.x = 220;
+    stepSession(session, idle, 0.1);
+    expect(session.unloading).toBe(false);
+    expect(session.delivered).toBeCloseTo(unloadRate * 0.2, 6);
+    expect(totalWater(session.world) + session.tank.water + session.delivered).toBeCloseTo(session.initialWater, 5);
+  });
+
+  it.each([0, 4, 9])('clamps fast level-%i unloading at the demo cutoff and freezes remaining water', level => {
+    const session = fullTankAtLevel(level);
+    session.delivered = DEMO_DELIVERY_LIMIT - 0.1;
+    session.initialWater += session.delivered;
+    stepSession(session, { ...idle, depositPressed: true }, 0.05);
+    expect(session.delivered).toBe(DEMO_DELIVERY_LIMIT);
+    expect(session.tank.water).toBeCloseTo(session.tank.capacity - 0.1, 6);
+    expect(session.tank.credits).toBeCloseTo(0.1, 6);
+    expect(session.completed).toBe(true);
+    expect(totalWater(session.world) + session.tank.water + session.delivered).toBeCloseTo(session.initialWater, 5);
+    const snapshot = JSON.stringify(session);
+    stepSession(session, { ...idle, depositPressed: true, collecting: true, purchase: 'capacity' }, 1);
+    expect(JSON.stringify(session)).toBe(snapshot);
+  });
+
+  it('keeps collection at 36 water per second across all ten tank sizes', () => {
+    for (let level = 0; level <= 9; level++) {
+      const session = fullTankAtLevel(level);
+      session.tank.water = 0;
+      for (let y = 26; y < 30; y++) {
+        for (let x = 14; x < 27; x++) session.world.water[session.world.index(x, y)] = 1;
+      }
+      session.initialWater = totalWater(session.world);
+      advanceExact(session, 0.25, 1 / 120, { collecting: true });
+      expect(session.tank.water).toBeCloseTo(9, 6);
+      expect(totalWater(session.world) + session.tank.water + session.delivered).toBeCloseTo(session.initialWater, 4);
+    }
   });
 
   it('cancels unloading on departure and requires machine proximity for purchases', () => {
@@ -269,7 +360,7 @@ describe('demo session', () => {
 
 
 describe('fractional transfer affordability', () => {
-  it('allows the advertised 60-credit purchase after unloading three full tanks', () => {
+  it('allows capacity purchases after fractional unloading without overcharging', () => {
     const session = fixture();
     for (let trip = 0; trip < 3; trip++) {
       session.tank.water = 20;
@@ -278,7 +369,7 @@ describe('fractional transfer affordability', () => {
     expect(session.tank.credits).toBeCloseTo(60, 8);
     stepSession(session, { ...idle, purchase: 'capacity' }, 1 / 60);
     expect(session.tank.capacity).toBe(40);
-    expect(session.tank.credits).toBe(0);
+    expect(session.tank.credits).toBeCloseTo(50, 8);
     expect(session.delivered).toBeCloseTo(60, 8);
   });
 });

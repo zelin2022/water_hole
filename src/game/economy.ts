@@ -21,7 +21,7 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   { id: 'jumpPower', name: 'Powered boots', description: 'Jump higher and launch upward faster.', costs: [10, 15, 20, 25, 30, 35, 40] },
   { id: 'doubleJump', name: 'Air jump', description: 'Jump once more in midair; landing or a wall grip recharges it.', costs: [35] },
   { id: 'climbSpeed', name: 'Climbing assist', description: 'Climb walls faster.', costs: [10, 15, 20, 25, 30, 35, 40] },
-  { id: 'capacity', name: 'Larger tank', description: 'Carry more water on each trip.', costs: [60, 120] },
+  { id: 'capacity', name: 'Larger tank', description: 'Add 20 water capacity and unload faster at the hopper.', costs: [10, 15, 20, 25, 30, 35, 40, 45, 50] },
   { id: 'detector', name: 'Water detector', description: 'Point toward nearby water within 160 units.', costs: [25] },
   { id: 'detectorRange', name: 'Detector amplifier', description: 'Increase the water detection radius.', costs: [45, 95], requires: 'detector' },
   { id: 'wallDig', name: 'Wall work harness', description: 'Use the pick while attached to a wall.', costs: [40] },
@@ -40,7 +40,8 @@ export interface Tank {
   upgraded: boolean;
   upgrades: Record<UpgradeId, number>;
 }
-export const UPGRADE_COST = 60;
+export const UPGRADE_COST = 10;
+export const BASE_UNLOAD_RATE = 25;
 export const CREDIT_EPSILON = 1e-8;
 export const JUMP_SPEEDS = [BASE_JUMP_SPEED, 350, 440, 540, 650, 780, 920, 1080] as const;
 export const CLIMB_SPEEDS = [BASE_CLIMB_SPEED, 135, 200, 280, 350, 440, 550, 680] as const;
@@ -52,6 +53,10 @@ export function createTank(capacity = 20): Tank {
 
 export function upgradeStats(tank: Tank) {
   const digInterval = [0.48, 0.34, 0.24, 0.16][tank.upgrades.digSpeed];
+  const capacity = 20 + 20 * tank.upgrades.capacity;
+  // A larger tank unloads faster, but a full 200-unit tank still takes twice
+  // as long as the starter tank. Collection speed is independent of equipment.
+  const fullUnloadTime = (20 / BASE_UNLOAD_RATE) * (1 + tank.upgrades.capacity / 9);
   return {
     digRadius: [12, 16, 20, 26, 34, 44, 58, 76][tank.upgrades.digRadius],
     digDamage: [1, 2, 3, 6][tank.upgrades.digDamage],
@@ -64,7 +69,8 @@ export function upgradeStats(tank: Tank) {
     wallJumpSpeed: Math.min(JUMP_SPEEDS[tank.upgrades.jumpPower], 1.6 * CLIMB_SPEEDS[tank.upgrades.jumpPower]),
     doubleJump: tank.upgrades.doubleJump > 0,
     climbSpeed: CLIMB_SPEEDS[tank.upgrades.climbSpeed],
-    capacity: [20, 40, 60][tank.upgrades.capacity],
+    capacity,
+    unloadRate: capacity / fullUnloadTime,
     detectorRadius: tank.upgrades.detector ? [160, 240, 320][tank.upgrades.detectorRange] : 0,
     torsoRadius: TORSO_LIGHT_RADIUS * 1.2 ** tank.upgrades.torsoLamp,
     headlampHalfAngle: HEADLAMP_HALF_ANGLE * 1.2 ** tank.upgrades.headlampWidth,

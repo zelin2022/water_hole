@@ -122,7 +122,7 @@ The following selection is approved for the provisional build and remains subjec
 | Jump power | Seven purchases beyond base; faster upward launch and higher jumps |
 | Double jump | One purchase; one air jump, recharged by landing or a wall grip |
 | Wall-climbing speed | Seven purchases beyond base |
-| Water tank capacity | Repeatable levels |
+| Water tank capacity | Nine purchases beyond base; 20 more water per level, up to 200 |
 | Water detector radius | Repeatable levels; requires detector v1 |
 | Torso-lamp radius | Two purchases beyond base; 20% more radius per level |
 | Headlamp width | Two purchases beyond base; 20% wider cone per level |
@@ -131,7 +131,7 @@ The following selection is approved for the provisional build and remains subjec
 | Digging while attached to a wall | One purchase; disabled before purchase |
 | Cave sonar | One purchase; temporarily traces connected tunnel walls for navigation |
 
-Mining and traversal deliberately reach exaggerated capability within the demo. Tank capacity and detector range retain their current two-purchase bounds. The shop must show the current stat, purchase effect, price, and affordability. Values remain provisional.
+Mining and traversal deliberately reach exaggerated capability within the demo. Tank capacity has nine purchases; detector range retains its two-purchase bound. The shop must show the current stat, purchase effect, price, and affordability. Values remain provisional.
 
 | Track | Base and successive values | Successive prices (cr) |
 | --- | --- | --- |
@@ -140,11 +140,12 @@ Mining and traversal deliberately reach exaggerated capability within the demo. 
 | Seconds between swings | 0.48, 0.34, 0.24, 0.16 | 10, 20, 30 |
 | Ground/air jump launch (world pixels/second) | ~159, 350, 440, 540, 650, 780, 920, 1080 | 10, 15, 20, 25, 30, 35, 40 |
 | Wall-climbing speed (world pixels/second) | 75, 135, 200, 280, 350, 440, 550, 680 | 10, 15, 20, 25, 30, 35, 40 |
+| Water tank capacity | 20, 40, 60, 80, 100, 120, 140, 160, 180, 200 | 10, 15, 20, 25, 30, 35, 40, 45, 50 |
 | Torso-lamp radius (world pixels) | 55, 66, 79.2 | 20, 35 |
 | Headlamp full cone angle (degrees) | 64.8, 77.76, 93.312 | 20, 35 |
 | Headlamp depth (world pixels) | 126, 151.2, 181.44 | 20, 35 |
 
-Wind-up is one quarter of the current swing interval. Across damage tiers 1/2/3/6, earth takes 3/2/1/1 impacts, stone 6/3/2/1, basalt 10/5/4/2, and granite 16/8/6/3. Sand always breaks in one impact. All mining purchases total 285 credits; adding the first capacity upgrade and work harness brings that to 385, below the 400-water demo cutoff. Maximum upgrades must still respect terrain shielding, reinforced foundations, water accounting, and the requirement for a harness when digging on a wall. Existing radius/damage levels keep their stats and partial terrain damage; older saves without speed upgrades receive level zero.
+Wind-up is one quarter of the current swing interval. Across damage tiers 1/2/3/6, earth takes 3/2/1/1 impacts, stone 6/3/2/1, basalt 10/5/4/2, and granite 16/8/6/3. Sand always breaks in one impact. All mining purchases total 285 credits; adding the first capacity upgrade and work harness brings that to 335, below the 400-water demo cutoff. Maximum upgrades must still respect terrain shielding, reinforced foundations, water accounting, and the requirement for a harness when digging on a wall. Existing radius/damage levels keep their stats and partial terrain damage; older saves without speed upgrades receive level zero.
 
 Base climbing is 75 world pixels per second. Base ground launch is `275 × 75/130` (approximately 159), base wall launch is 120, and upward gravity is `900 × (75/130)²` (approximately 300). Scaling launch and upward gravity together slows the initial ascent while preserving roughly 42-pixel ground and 24-pixel wall jumps. Jump purchases use upward gravity 900. Falling retains gravity 900 and terminal speed 420 at every tier; the automatic wall-lip assist retains its 16-pixel height.
 
@@ -153,6 +154,10 @@ Each complete jump or climbing track costs 175 credits; double jump costs 35. Wa
 Hide unavailable upgrades, including unmet prerequisites and equipment with no remaining levels. Show eligible upgrades without enough funding with a red price such as "40 cr"; funded upgrades retain the install button. Keep the current prerequisites for this provisional build; the larger upgrade tree will be designed after the demo.
 
 The three lamp tracks are available from the start with no prerequisite. Each complete track costs 55 credits; all lamp purchases total 165. Older saves without these entries receive level zero without changing terrain, water, credits, or other equipment. Save purchased lamp levels and restore their illumination; development omni vision stays independent of lamp equipment.
+
+Tank capacity has ten equipment levels in total, indexed 0–9, with capacity `20 * (L + 1)` at upgrade level L. The nine purchases cost 270 credits altogether, allowing the complete tank track before the unchanged 400-water cutoff while still requiring choices among other tracks. Suction stays at 36 water per second at every level. Full-tank unloading time is `0.8 * (1 + L / 9)` seconds, and hopper transfer rate is capacity divided by that time. The 20-water starting tank empties in 0.8 seconds at 25 water per second; the 200-water maximum tank empties in 1.6 seconds at 125 water per second. Partial tanks empty proportionally to their contents at the same equipment-derived rate. Interrupted transfers credit only the delivered water, and reaching the demo cutoff must stop the transfer and simulation immediately.
+
+Existing saved capacity levels 0/1/2 keep their original 20/40/60 capacities. Preserve actual tank water, credits, delivered totals, and terrain without price refunds or regeneration; derive the unloading rate from the restored capacity level without adding save fields. Backpack growth remains bounded at the previous 60-water model size so larger capacity does not obscure the worker or environment.
 
 ### Other upgrade ideas retained for tuning
 
@@ -198,9 +203,11 @@ Verify all 7/3/3 mining purchases, capped prices, attainable mining cost, discre
 
 Verify two purchases for each lamp track, 20% compounding geometry changes, capped levels/prices, affordability, and independent equipment effects. Round-trip lamp levels and migrate missing entries to zero while retaining the saved world and economy. Playtest the smaller starter beam and each upgraded lamp in darkness, through excavated passages, and near surface light; check that terrain still blocks illumination and omni vision does not change equipment.
 
+Verify all nine capacity purchases, 20-water increments through 200, capped levels/prices, and the 270-credit track total. Check unchanged suction at every level and monotonically increasing full-unload duration from 0.8 to 1.6 seconds, with exact actual-water crediting across partial and interrupted transfers and the delivery cutoff. Round-trip maximum capacity and preserve legacy 20/40/60 tanks, water, and credits. Playtest shop descriptions, larger tank HUD values, accelerated hopper transfer, and bounded backpack visuals.
+
 ## Provisional build tuning
 
-The implementation uses a 400-unit cumulative delivery cutoff, 0.48 seconds between initial pickaxe swings with a 0.12-second wind-up, and 25 water units per second of hopper transfer. Speed purchases reduce both swing interval and wind-up, ending at 0.16/0.04 seconds. Sand/earth/stone/basalt/granite durability is 1/3/6/10/16. New sites reach 2000 HUD metres. Starting climbing speed is 75 world pixels per second, rising to 680; ground jump launch rises from approximately 159 to 1080. The base tier uses approximately 300 upward gravity to preserve its earlier jump height at the slower launch speed; upgraded jumps and all falling use gravity 900. All are starting values for playtesting.
+The implementation uses a 400-unit cumulative delivery cutoff and 0.48 seconds between initial pickaxe swings with a 0.12-second wind-up. Tank collection stays at 36 water units per second; hopper transfer scales from 25 to 125 water units per second across capacity levels, so full-tank unloading takes 0.8 to 1.6 seconds. Speed purchases reduce both swing interval and wind-up, ending at 0.16/0.04 seconds. Sand/earth/stone/basalt/granite durability is 1/3/6/10/16. New sites reach 2000 HUD metres. Starting climbing speed is 75 world pixels per second, rising to 680; ground jump launch rises from approximately 159 to 1080. The base tier uses approximately 300 upward gravity to preserve its earlier jump height at the slower launch speed; upgraded jumps and all falling use gravity 900. All are starting values for playtesting.
 
 Tune the core timings and delivery limit in `src/game/session.ts`, three-size volumes/probabilities in `src/game/water-pockets.ts`, reservoir placement and legacy budgets in `src/game/generation.ts`, upgrade effects/prices in `src/game/economy.ts`, material durability/reach in `src/game/digging.ts`, wall grip/contour tolerance and walking-step height in `src/game/player.ts`, and lighting/sonar in `src/game/vision.ts`. Held grips currently bridge up to 8 world pixels; walking steps use two terrain cells; ambient lamp suppression is 0.85. Music phrases, scene weights, and blend time live in `src/music.ts`, with audio scheduling and gain ramps in `src/audio.ts`. New Game uses fixed three-size generation and normal vision; builds with developer tools enabled expose full visibility, teleport, and credit controls in the backtick panel. `npm run build:release` and the `package:*:release` commands use `.env.release` to disable those tools. Partial-damage stages live in `src/terrain-damage.ts`, with their visual marks in `src/render.ts`. The current presentation and original synthesized audio are a first pass toward the art brief.
 

@@ -134,7 +134,7 @@ function statDescription(id: UpgradeId): string {
     case 'digSpeed': return `Seconds per swing ${stats.digInterval.toFixed(2)} → ${(next.digInterval ?? stats.digInterval).toFixed(2)}`;
     case 'climbSpeed': return `Climbing speed ${stats.climbSpeed} → ${next.climbSpeed ?? stats.climbSpeed}`;
     case 'jumpPower': return `Jump launch speed ${format(stats.jumpSpeed)} → ${format(next.jumpSpeed ?? stats.jumpSpeed)}`;
-    case 'capacity': return `Water capacity ${stats.capacity} → ${next.capacity ?? stats.capacity}`;
+    case 'capacity': return `Water capacity ${stats.capacity} → ${next.capacity ?? stats.capacity} · Full unload ${format(stats.capacity / stats.unloadRate)}s → ${format(next.capacity / next.unloadRate)}s`;
     case 'torsoLamp': return `Light radius ${format(stats.torsoRadius)} → ${format(next.torsoRadius ?? stats.torsoRadius)}`;
     case 'headlampWidth': return `Beam angle ${format(stats.headlampHalfAngle * 360 / Math.PI)}° → ${format((next.headlampHalfAngle ?? stats.headlampHalfAngle) * 360 / Math.PI)}°`;
     case 'headlampDepth': return `Beam depth ${format(stats.headlampRange)} → ${format(next.headlampRange ?? stats.headlampRange)}`;
