@@ -7,6 +7,14 @@ import type { Point, World } from './game/world';
 import { caveOutlineOpacity, DARKNESS, lightTransmission } from './render-lighting';
 
 const ZOOM = 1.8;
+const TERRAIN_STYLES: Record<number, { base: string; shades: string[]; width: number; height: number; alpha: number }> = {
+  1: { base: '#806852', shades: ['#8e755c', '#74604e', '#9a8063', '#80694f'], width: 66, height: 42, alpha: 0.55 },
+  2: { base: '#596063', shades: ['#666c6d', '#4f5559', '#707475', '#5c6161'], width: 48, height: 36, alpha: 0.75 },
+  3: { base: '#727970', shades: [], width: 48, height: 48, alpha: 1 },
+  4: { base: '#baa274', shades: ['#cfb98a', '#a98e63', '#d8c494', '#b9a070'], width: 30, height: 18, alpha: 0.5 },
+  5: { base: '#414f60', shades: ['#536276', '#354354', '#637184', '#455367'], width: 56, height: 40, alpha: 0.75 },
+  6: { base: '#6b5261', shades: ['#816676', '#57424f', '#947888', '#6c5365'], width: 60, height: 44, alpha: 0.75 },
+};
 const clamp = (v: number, min: number, max: number): number => Math.max(min, Math.min(max, v));
 const hash = (x: number, y: number): number => {
   const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
@@ -24,6 +32,8 @@ export class Renderer {
   private lightPixels: ImageData | undefined;
   private cachedWorld: World | undefined;
   private cachedVersion = -1;
+  private terrainTop = 0;
+  private terrainBottom = 0;
   private cameraX = 0;
   private cameraY = 0;
   private width = 1;
@@ -66,8 +76,9 @@ export class Renderer {
     ctx.translate(-this.cameraX, -this.cameraY);
     ctx.imageSmoothingEnabled = true;
     this.drawBackground(world.width * world.cellSize, world.height * world.cellSize, session.surfaceY);
-    if (this.cachedWorld !== world || this.cachedVersion !== world.terrainVersion) this.cacheTerrain(world);
-    ctx.drawImage(this.terrain, 0, 0);
+    if (this.cachedWorld !== world || this.cachedVersion !== world.terrainVersion
+      || this.cameraY < this.terrainTop || this.cameraY + vh > this.terrainBottom) this.cacheTerrain(world);
+    ctx.drawImage(this.terrain, 0, this.terrainTop);
     this.drawWater(session);
     this.drawFallingDirt(session);
     this.drawMachine(session);
@@ -124,15 +135,23 @@ export class Renderer {
 
   private cacheTerrain(world: World): void {
     const s = world.cellSize;
+    const firstRow = Math.max(0, Math.floor((this.cameraY - 128) / s));
+    const lastRow = Math.min(world.height, Math.ceil((this.cameraY + this.height / ZOOM + 128) / s));
+    this.terrainTop = firstRow * s;
+    this.terrainBottom = lastRow * s;
     this.terrain.width = this.materialLayer.width = world.width * s;
-    this.terrain.height = this.materialLayer.height = world.height * s;
+    this.terrain.height = this.materialLayer.height = this.terrainBottom - this.terrainTop;
     const terrainContext = this.terrain.getContext('2d')!;
     const layer = this.materialLayer.getContext('2d')!;
+    terrainContext.setTransform(1, 0, 0, 1, 0, -this.terrainTop);
+    layer.setTransform(1, 0, 0, 1, 0, -this.terrainTop);
+    terrainContext.clearRect(0, this.terrainTop, this.terrain.width, this.terrain.height);
     const materials = world.material;
-    for (const material of [1, 2, 3]) {
-      layer.globalCompositeOperation = 'source-over'; layer.clearRect(0, 0, this.materialLayer.width, this.materialLayer.height);
-      layer.fillStyle = material === 1 ? '#806852' : material === 2 ? '#596063' : '#727970';
-      for (let y = 0; y < world.height; y++) {
+    for (const material of [1, 2, 3, 4, 5, 6]) {
+      const style = TERRAIN_STYLES[material];
+      layer.globalCompositeOperation = 'source-over'; layer.clearRect(0, this.terrainTop, this.materialLayer.width, this.materialLayer.height);
+      layer.fillStyle = style.base;
+      for (let y = firstRow; y < lastRow; y++) {
         let start = -1;
         for (let x = 0; x <= world.width; x++) {
           const match = x < world.width && materials[world.index(x, y)] === material;
@@ -145,7 +164,7 @@ export class Renderer {
       if (material === 3) {
         // Broad concrete lifts and recessed form ties distinguish manufactured
         // support from geological facets without adding a collision-free ledge.
-        for (let y = 0; y < this.terrain.height; y += 48) {
+        for (let y = Math.floor(this.terrainTop / 48) * 48; y < this.terrainBottom; y += 48) {
           layer.fillStyle = '#555f5b'; layer.fillRect(0, y, this.terrain.width, 1.5);
           layer.fillStyle = '#8b9185'; layer.fillRect(0, y + 1.5, this.terrain.width, 1);
           for (let x = 16; x < this.terrain.width; x += 32) {
@@ -154,37 +173,42 @@ export class Renderer {
             layer.fillStyle = '#9b9e8b'; layer.fillRect(x + 10, y + 20.5, 2.5, 0.8);
           }
         }
-        layer.globalCompositeOperation = 'source-over'; terrainContext.drawImage(this.materialLayer, 0, 0);
+        layer.globalCompositeOperation = 'source-over'; terrainContext.drawImage(this.materialLayer, 0, this.terrainTop);
         continue;
       }
       // Large stable facets are clipped to each natural material, never tiled per cell.
-      const shades = material === 1 ? ['#8e755c', '#74604e', '#9a8063', '#80694f'] : ['#666c6d', '#4f5559', '#707475', '#5c6161'];
-      const fw = material === 1 ? 66 : 48;
-      const fh = material === 1 ? 42 : 36;
-      for (let y = -fh; y < this.terrain.height + fh; y += fh) {
+      const shades = style.shades;
+      const fw = style.width;
+      const fh = style.height;
+      for (let y = Math.floor(this.terrainTop / fh) * fh - fh; y < this.terrainBottom + fh; y += fh) {
         for (let x = -fw; x < this.terrain.width + fw; x += fw) {
           const h = hash(x, y + material * 97);
           const offset = (Math.floor(y / fh) % 2) * fw * 0.5;
-          layer.fillStyle = shades[Math.floor(h * shades.length)]; layer.globalAlpha = material === 1 ? 0.55 : 0.75;
+          layer.fillStyle = shades[Math.floor(h * shades.length)]; layer.globalAlpha = style.alpha;
           layer.beginPath(); layer.moveTo(x + offset, y + fh * 0.2); layer.lineTo(x + offset + fw * 0.6, y - h * 7);
           layer.lineTo(x + offset + fw, y + fh * 0.45); layer.lineTo(x + offset + fw * 0.7, y + fh);
           layer.lineTo(x + offset + fw * 0.2, y + fh * 0.9); layer.closePath(); layer.fill();
-          if (material === 2 && h > 0.76) {
+          if ((material === 2 || material === 5) && h > 0.76) {
             layer.strokeStyle = '#323b3e'; layer.lineWidth = 0.8; layer.globalAlpha = 0.35;
             layer.beginPath(); layer.moveTo(x + offset + 8, y + 12); layer.lineTo(x + offset + 23, y + 21);
             layer.lineTo(x + offset + 20, y + 29); layer.stroke();
           }
+          if (material === 6) {
+            layer.fillStyle = '#baa0ad'; layer.globalAlpha = 0.4;
+            layer.fillRect(x + offset + 9 + h * 18, y + 11, 2, 1.5);
+            layer.fillRect(x + offset + 32, y + 26 + h * 8, 1.5, 2);
+          }
         }
       }
-      layer.globalAlpha = 1; layer.globalCompositeOperation = 'source-over'; terrainContext.drawImage(this.materialLayer, 0, 0);
+      layer.globalAlpha = 1; layer.globalCompositeOperation = 'source-over'; terrainContext.drawImage(this.materialLayer, 0, this.terrainTop);
     }
     const ctx = terrainContext;
     // Bevel every exposed cut, including arbitrary excavation, on its solid side.
-    for (let y = 1; y < world.height - 1; y++) {
+    for (let y = Math.max(1, firstRow); y < Math.min(world.height - 1, lastRow); y++) {
       for (let x = 1; x < world.width - 1; x++) {
         const index = world.index(x, y);
         if (!world.solid[index]) continue;
-        const px = x * s; const py = y * s; const earth = world.material[index] === 1;
+        const px = x * s; const py = y * s; const earth = world.material[index] === 1 || world.material[index] === 4;
         const reinforced = world.material[index] === 3;
         if (!world.isSolid(x, y - 1)) {
           ctx.fillStyle = earth ? '#b09673' : reinforced ? '#bec1a7' : '#92938a'; ctx.fillRect(px, py, s, 1.8);
@@ -224,14 +248,16 @@ export class Renderer {
 
   private drawWater(session: Session): void {
     const { world } = session; const s = world.cellSize;
-    if (this.waterLayer.width !== world.width * s || this.waterLayer.height !== world.height * s) {
-      this.waterLayer.width = world.width * s; this.waterLayer.height = world.height * s;
+    const { minX, maxX, minY, maxY } = this.bounds(world);
+    const top = minY * s, height = (maxY - minY + 1) * s;
+    if (this.waterLayer.width !== world.width * s || this.waterLayer.height !== height) {
+      this.waterLayer.width = world.width * s; this.waterLayer.height = height;
     }
     // Rasterize contiguous liquid at integer world pixels, then transform once.
     // Fractional camera zoom must not put antialias seams between liquid rows.
     const ctx = this.waterLayer.getContext('2d')!;
-    ctx.clearRect(0, 0, this.waterLayer.width, this.waterLayer.height);
-    const { minX, maxX, minY, maxY } = this.bounds(world);
+    ctx.setTransform(1, 0, 0, 1, 0, -top);
+    ctx.clearRect(0, top, this.waterLayer.width, this.waterLayer.height);
     const depth = ctx.createLinearGradient(0, this.cameraY, 0, this.cameraY + this.height / ZOOM);
     depth.addColorStop(0, '#348f95'); depth.addColorStop(1, '#225e6b');
     for (let y = minY; y <= maxY; y++) {
@@ -259,19 +285,22 @@ export class Renderer {
       }
       ctx.stroke();
     }
-    this.context.drawImage(this.waterLayer, 0, 0);
+    this.context.drawImage(this.waterLayer, 0, top);
   }
 
   private drawLighting(session: Session, vision: VisionState): void {
     const { world } = session; const ctx = this.context;
-    if (this.lightMask.width !== world.width || this.lightMask.height !== world.height) {
-      this.lightMask.width = world.width; this.lightMask.height = world.height;
-      this.lightPixels = this.lightMask.getContext('2d')!.createImageData(world.width, world.height);
+    const { minY, maxY } = this.bounds(world);
+    const firstRow = Math.max(0, minY - 1), lastRow = Math.min(world.height - 1, maxY + 1);
+    const rows = lastRow - firstRow + 1;
+    if (this.lightMask.width !== world.width || this.lightMask.height !== rows) {
+      this.lightMask.width = world.width; this.lightMask.height = rows;
+      this.lightPixels = this.lightMask.getContext('2d')!.createImageData(world.width, rows);
     }
     const pixels = this.lightPixels!.data;
-    for (let index = 0; index < world.solid.length; index++) {
+    for (let index = firstRow * world.width; index < (lastRow + 1) * world.width; index++) {
       const transmission = lightTransmission(vision.moonlight[index], vision.lamplight[index], this.lightChannels);
-      const offset = index * 4;
+      const offset = (index - firstRow * world.width) * 4;
       pixels[offset] = Math.round(transmission[0] * 255);
       pixels[offset + 1] = Math.round(transmission[1] * 255);
       pixels[offset + 2] = Math.round(transmission[2] * 255);
@@ -280,7 +309,7 @@ export class Renderer {
     this.lightMask.getContext('2d')!.putImageData(this.lightPixels!, 0, 0);
     ctx.save(); ctx.imageSmoothingEnabled = true;
     ctx.globalCompositeOperation = 'multiply';
-    ctx.drawImage(this.lightMask, 0, 0, world.width * world.cellSize, world.height * world.cellSize);
+    ctx.drawImage(this.lightMask, 0, firstRow * world.cellSize, world.width * world.cellSize, rows * world.cellSize);
     ctx.globalCompositeOperation = 'screen';
     ctx.fillStyle = `rgb(${DARKNESS.join(',')})`;
     ctx.fillRect(this.cameraX, this.cameraY, this.width / ZOOM, this.height / ZOOM);

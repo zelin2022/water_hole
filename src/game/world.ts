@@ -3,13 +3,13 @@ export interface Point {
   y: number;
 }
 
-export type Material = 0 | 1 | 2 | 3;
+export type Material = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 /** A finite terrain grid. Positions outside its sealed boundary are solid. */
 export class World {
   readonly solid: Uint8Array;
   readonly water: Float32Array;
-  /** 0 = air, 1 = earth, 2 = stone, 3 = reinforced foundation. */
+  /** 0 air, 1 earth, 2 stone, 3 reinforced foundation, 4 sand, 5 basalt, 6 granite. */
   readonly material: Uint8Array;
   /** Accumulated pickaxe damage, reset when a cell changes material or breaks. */
   readonly damage: Float32Array;
@@ -68,7 +68,7 @@ export class World {
   /** Solid replacement never destroys water; boundary and placed foundation are immutable. */
   setMaterial(cellX: number, cellY: number, material: Material): void {
     if (!this.inBounds(cellX, cellY) || this.isBoundary(cellX, cellY)) return;
-    if (material !== 0 && material !== 1 && material !== 2 && material !== 3) throw new RangeError('Unknown terrain material.');
+    if (!Number.isInteger(material) || material < 0 || material > 6) throw new RangeError('Unknown terrain material.');
     const index = this.index(cellX, cellY);
     if (this.material[index] === material || this.material[index] === 3) return;
     if (material && this.water[index] > 0) {

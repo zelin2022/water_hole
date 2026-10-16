@@ -22,6 +22,14 @@ const idle: GameInput = {
 };
 
 describe('provisional development controls', () => {
+  it('resets wall-jump state and recharges the air jump when teleporting onto the platform', () => {
+    const session = createSession({ seed: 42 });
+    session.player.airJumpAvailable = false;
+    session.player.wallJumpChain = true;
+    expect(teleportToHopper(session)).toBe(true);
+    expect(session.player.airJumpAvailable).toBe(true);
+    expect(session.player.wallJumpChain).toBe(false);
+  });
   it('retires the walking step comparison now that two-cell stepping is selected', () => {
     expect(devTools).not.toHaveProperty('setStepHeight');
   });

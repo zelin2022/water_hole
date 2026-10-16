@@ -1,6 +1,7 @@
 /** A shared harmonic clock lets scene layers crossfade without changing songs. */
 export const MUSIC_BEAT_SECONDS = 0.8;
 export const MUSIC_BLEND_SECONDS = 1.6;
+export const MUSIC_DEPTH_METRES = 1600;
 
 export interface MusicMix {
   exploration: number;
@@ -27,7 +28,7 @@ function smoothstep(value: number): number { return value * value * (3 - 2 * val
 
 /** Depth uses HUD metres; tankFill is current carried water / current capacity. */
 export function musicMix(depth: number, tankFill: number): MusicMix {
-  const underground = smoothstep(unit(depth / 160));
+  const underground = smoothstep(unit(depth / MUSIC_DEPTH_METRES));
   const returning = smoothstep(unit(tankFill));
   return { exploration: 1 - returning * 0.65, returning, depth: underground, surface: 1 - underground };
 }

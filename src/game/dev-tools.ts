@@ -59,7 +59,8 @@ export function teleportToHopper(session: Session): boolean {
   const destination = supported ?? airborne;
   if (!destination) return false;
   Object.assign(player, { x: destination.x, y: destination.y, vx: 0, vy: 0,
-    grounded: supported !== null, wall: 0, suppressedWall: 0, wallJumpTime: 0 });
+    grounded: supported !== null, wall: 0, suppressedWall: 0, wallJumpTime: 0,
+    airJumpAvailable: true, wallJumpChain: false });
   session.digCooldown = 0;
   session.strikeTime = -1;
   session.lastStrike = null;

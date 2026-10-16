@@ -4,9 +4,144 @@ import { collectIntoTank, buyUpgrade } from './economy';
 import { totalWater } from './water';
 import { deserializeSession, serializeSession } from './save';
 import { setDevCredits, setOmniVision } from './dev-tools';
+import { World } from './world';
+import type { Session } from './session';
+
+/** Real array-based v1 fixtures keep backward compatibility independent of the current writer. */
+function serializeLegacySession(session: Session): string {
+  const { world, explored, ...state } = session;
+  return JSON.stringify({ version: 1,
+    world: { width: world.width, height: world.height, cellSize: world.cellSize,
+      solid: Array.from(world.solid), material: Array.from(world.material),
+      damage: Array.from(world.damage), water: Array.from(world.water) },
+    session: { ...state, explored: Array.from(explored) },
+  });
+}
+
+/** Most format-corruption cases use an earlier small world; deep saves have their own round-trip check. */
+function createShallowSession(options: SessionOptions = {}): Session {
+  const session = createSession(options);
+  const world = new World(384, 256, 4);
+  for (const key of ['solid', 'material', 'damage', 'water'] as const) world[key].set(session.world[key].subarray(0, world[key].length));
+  const bottom = (world.height - 1) * world.width;
+  world.solid.fill(1, bottom); world.material.fill(2, bottom);
+  world.damage.fill(0, bottom); world.water.fill(0, bottom);
+  session.world = world;
+  session.explored = session.explored.slice(0, world.solid.length);
+  session.initialWater = totalWater(world);
+  return session;
+}
+
+describe('compact deep-world saves', () => {
+  it('round-trips a 2000-metre site well below the browser storage quota without quantizing water', () => {
+    const session = createSession({ seed: 42 });
+    const world = new World(384, 2053, 4);
+    // Keep a realistic mostly-solid deep world, retaining the playable original top.
+    world.solid.fill(1); world.material.fill(2);
+    world.solid.set(session.world.solid.subarray(0, Math.min(world.solid.length, session.world.solid.length)));
+    world.material.set(session.world.material.subarray(0, Math.min(world.material.length, session.world.material.length)));
+    world.damage.set(session.world.damage.subarray(0, Math.min(world.damage.length, session.world.damage.length)));
+    world.water.set(session.world.water.subarray(0, Math.min(world.water.length, session.world.water.length)));
+    session.world = world;
+    session.explored = new Uint8Array(world.solid.length);
+    const waterIndex = world.water.findIndex(amount => amount > 0);
+    world.water[waterIndex] = Math.fround(0.123456789);
+    session.initialWater = totalWater(world);
+    const save = serializeSession(session);
+    expect(save.length * 2).toBeLessThan(2 * 1024 * 1024);
+    expect(JSON.parse(save).version).toBe(2);
+    const restored = deserializeSession(save);
+    expect(restored.world.height).toBe(2053);
+    expect(restored.world.material).toEqual(world.material);
+    expect(restored.world.water).toEqual(world.water);
+    expect(restored.explored).toEqual(session.explored);
+    expect(restored.initialWater).toBe(session.initialWater);
+    const altered = JSON.parse(save);
+    altered.session.tank.water = 1;
+    expect(() => deserializeSession(JSON.stringify(altered))).toThrow(/water ledger mismatch/);
+  });
+
+  it('rejects malformed encoded runs before restoring terrain', () => {
+    const data = JSON.parse(serializeSession(createSession({ seed: 42 })));
+    for (const grid of [null, { encoding: 'rle', runs: [0, 0] },
+      { encoding: 'rle', runs: [0, -1] }, { encoding: 'rle', runs: [0, 0.5] },
+      { encoding: 'rle', runs: [0, data.world.width * data.world.height + 1] },
+      { encoding: 'rle', runs: [0, 1, 1] }, { encoding: 'rle', runs: [0, 1] },
+      { encoding: 'rle', runs: [0.5, data.world.width * data.world.height] },
+      { encoding: 'other', runs: [0, 1] }]) {
+      data.world.solid = grid;
+      expect(() => deserializeSession(JSON.stringify(data))).toThrow(/solid cells/);
+    }
+  });
+
+  it('retains the health and partial damage of sand, earth, basalt and granite', () => {
+    const session = createSession({ seed: 42 });
+    for (const [material, damage] of [[4, 0.5], [1, 2], [5, 9], [6, 15]] as const) {
+      const index = session.world.index(300, 150 + material);
+      session.world.setMaterial(300, 150 + material, material);
+      session.world.damage[index] = damage;
+    }
+    const restored = deserializeSession(serializeSession(session));
+    expect(restored.world.material).toEqual(session.world.material);
+    expect(restored.world.damage).toEqual(session.world.damage);
+  });
+
+  it('preserves a spent double jump and wall-chain state across save/load', () => {
+    const session = createSession({ seed: 42 });
+    setDevCredits(session, 1000);
+    expect(buyUpgrade(session.tank, 'doubleJump')).toBe(true);
+    for (const id of ['jumpPower', 'climbSpeed'] as const) {
+      for (let level = 0; level < 7; level++) expect(buyUpgrade(session.tank, id)).toBe(true);
+    }
+    session.player.airJumpAvailable = false;
+    session.player.wallJumpChain = true;
+    session.player.vy = -200;
+    const restored = deserializeSession(serializeSession(session));
+    expect(restored.tank.upgrades.doubleJump).toBe(1);
+    expect(restored.tank.upgrades).toMatchObject({ jumpPower: 7, climbSpeed: 7 });
+    expect(restored.player).toEqual(session.player);
+  });
+
+  it('migrates earlier shallow worlds without resizing, granting equipment or replenishing an airborne jump', () => {
+    const original = createSession({ seed: 42 });
+    const world = new World(384, 256, 4);
+    for (const key of ['solid', 'material', 'damage', 'water'] as const) {
+      world[key].set(original.world[key].subarray(0, world[key].length));
+    }
+    const bottom = (world.height - 1) * world.width;
+    world.solid.fill(1, bottom); world.material.fill(2, bottom);
+    world.damage.fill(0, bottom); world.water.fill(0, bottom);
+    original.world = world;
+    original.explored = original.explored.slice(0, world.solid.length);
+    original.initialWater = totalWater(world);
+    original.player.vy = -200;
+    const data = JSON.parse(serializeLegacySession(original));
+    delete data.session.player.airJumpAvailable;
+    delete data.session.player.wallJumpChain;
+    delete data.session.tank.upgrades.jumpPower;
+    delete data.session.tank.upgrades.doubleJump;
+    const restored = deserializeSession(JSON.stringify(data));
+    expect(restored.world.height).toBe(256);
+    expect(restored.world.material).toEqual(world.material);
+    expect(restored.world.water).toEqual(world.water);
+    expect(restored.player.airJumpAvailable).toBe(false);
+    expect(restored.player.wallJumpChain).toBe(true);
+    expect(restored.player.vy).toBe(-200);
+    expect(restored.tank.upgrades).toMatchObject({ jumpPower: 0, doubleJump: 0 });
+  });
+
+  it('rejects invalid jump state and levels beyond the seven mobility purchases', () => {
+    for (const [field, value] of [['airJumpAvailable', 1], ['wallJumpChain', null]] as const) {
+      expect(() => deserializeSession(corrupt(data => data.session.player[field] = value))).toThrow(/player jump state/);
+    }
+    for (const [id, value] of [['jumpPower', 8], ['climbSpeed', 8], ['doubleJump', 2]] as const) {
+      expect(() => deserializeSession(corrupt(data => data.session.tank.upgrades[id] = value))).toThrow(/upgrade level/);
+    }
+  });
+});
 
 function stockedSession(waterDistribution?: SessionOptions['waterDistribution']) {
-  const session = createSession({ seed: 42, caveMemory: 'sonar', headlamp: 'mouse', waterDistribution });
+  const session = createShallowSession({ seed: 42, caveMemory: 'sonar', headlamp: 'mouse', waterDistribution });
   // Move a ledger-accounted portion of the world water into the machine and tank.
   let available = 100;
   for (let index = 0; index < session.world.water.length && available > 0; index++) {
@@ -29,7 +164,7 @@ function stockedSession(waterDistribution?: SessionOptions['waterDistribution'])
 }
 
 function corrupt(change: (data: any) => void) {
-  const data = JSON.parse(serializeSession(createSession({seed:2})));
+  const data = JSON.parse(serializeLegacySession(createShallowSession({seed:2})));
   change(data);
   return JSON.stringify(data);
 }
@@ -52,18 +187,18 @@ describe('versioned local saves', () => {
     const earth = session.world.material.findIndex(material => material === 1);
     session.world.damage[stone] = 2;
     expect(deserializeSession(serializeSession(session)).world.damage[stone]).toBe(2);
-    const brokenStone = JSON.parse(serializeSession(session));
+    const brokenStone = JSON.parse(serializeLegacySession(session));
     brokenStone.world.damage[stone] = 6;
     expect(() => deserializeSession(JSON.stringify(brokenStone))).toThrow(/broken terrain left solid/);
-    const brokenEarth = JSON.parse(serializeSession(session));
-    brokenEarth.world.damage[earth] = 1;
+    const brokenEarth = JSON.parse(serializeLegacySession(session));
+    brokenEarth.world.damage[earth] = 3;
     expect(() => deserializeSession(JSON.stringify(brokenEarth))).toThrow(/broken terrain left solid/);
     brokenStone.world.damage[stone] = 6.1;
-    expect(() => deserializeSession(JSON.stringify(brokenStone))).toThrow(/terrain damage/);
+    expect(() => deserializeSession(JSON.stringify(brokenStone))).toThrow(/broken terrain left solid/);
   });
 
   it('round-trips reinforced foundation with its indestructibility and water ledger intact', () => {
-    const session = createSession({ seed: 42 });
+    const session = createShallowSession({ seed: 42 });
     session.world.setMaterial(30, 30, 3);
     const restored = deserializeSession(serializeSession(session));
     expect(restored.world.material).toEqual(session.world.material);
@@ -80,11 +215,11 @@ describe('versioned local saves', () => {
       data.world.material[index] = 3;
       data.world.damage[index] = 0.1;
     }))).toThrow(/foundation/);
-    expect(() => deserializeSession(corrupt(data => data.world.material[0] = 4))).toThrow(/terrain materials/);
+    expect(() => deserializeSession(corrupt(data => data.world.material[0] = 7))).toThrow(/terrain materials/);
   });
 
   it('preserves a saved earlier world without adding a foundation or moving its machine', () => {
-    const data = JSON.parse(serializeSession(createSession({ seed: 42 })));
+    const data = JSON.parse(serializeLegacySession(createShallowSession({ seed: 42 })));
     // Earlier sites have ordinary earth in this strip; loading uses their actual
     // stored terrain rather than upgrading them to the new generated layout.
     for (let y = 44; y < data.world.height - 1; y++) {
@@ -108,17 +243,17 @@ describe('versioned local saves', () => {
     session.subsurfaceScan = { origin: { x: 180, y: 120 }, startedAt: 7, maxRadius: 600 };
     session.lastSubsurfaceScanAt = 7;
     session.tank.upgrades.subsurfaceScanner = 1;
-    const earlier = JSON.parse(serializeSession(session));
+    const earlier = JSON.parse(serializeLegacySession(session));
     earlier.session.options.caveMemory = 'remembered';
     const restored = deserializeSession(JSON.stringify(earlier));
     expect(restored.options.caveMemory).toBe('sonar');
-    expect(JSON.parse(serializeSession(restored))).toEqual({ ...earlier,
+    expect(JSON.parse(serializeLegacySession(restored))).toEqual({ ...earlier,
       session: { ...earlier.session, options: { ...earlier.session.options, caveMemory: 'sonar' } } });
     expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(restored.initialWater, 5);
   });
 
   it('round-trips the selected dark-cave mode for new expeditions', () => {
-    const session = createSession({ seed: 42 });
+    const session = createShallowSession({ seed: 42 });
     expect(deserializeSession(serializeSession(session)).options.caveMemory).toBe('sonar');
   });
 
@@ -145,7 +280,7 @@ describe('versioned local saves', () => {
   it('migrates earlier v1 saves without scanner metadata while preserving owned cave sonar and progress', () => {
     const session = stockedSession();
     expect(buyUpgrade(session.tank, 'sonar')).toBe(true);
-    const earlier = JSON.parse(serializeSession(session));
+    const earlier = JSON.parse(serializeLegacySession(session));
     delete earlier.session.tank.upgrades.subsurfaceScanner;
     delete earlier.session.subsurfaceScan;
     delete earlier.session.lastSubsurfaceScanAt;
@@ -188,7 +323,7 @@ describe('versioned local saves', () => {
   });
 
   it('round-trips the selected depth-weighted distribution for new expeditions', () => {
-    const session = createSession({ seed: 42 });
+    const session = createShallowSession({ seed: 42 });
     const restored = deserializeSession(serializeSession(session));
     expect(restored.options.waterDistribution).toBe('depth-weighted');
     expect(restored.world.solid).toEqual(session.world.solid);
@@ -198,7 +333,7 @@ describe('versioned local saves', () => {
 
   it('accepts depth-weighted save metadata without regenerating its serialized site', () => {
     const session = stockedSession();
-    const data = JSON.parse(serializeSession(session));
+    const data = JSON.parse(serializeLegacySession(session));
     data.session.options.waterDistribution = 'depth-weighted';
     const restored = deserializeSession(JSON.stringify(data));
     expect(restored.options.waterDistribution).toBe('depth-weighted');
@@ -211,7 +346,7 @@ describe('versioned local saves', () => {
 
   it.each(['many-small', 'fewer-large'] as const)('preserves legacy %s metadata with its actual site and water ledger', waterDistribution => {
     const session = stockedSession(waterDistribution);
-    const data = JSON.parse(serializeSession(session));
+    const data = JSON.parse(serializeLegacySession(session));
     data.session.options.waterDistribution = waterDistribution;
     const restored = deserializeSession(JSON.stringify(data));
     expect(restored.options.waterDistribution).toBe(waterDistribution);
@@ -228,7 +363,7 @@ describe('versioned local saves', () => {
 
   it('migrates earlier v1 comparison choices while preserving their serialized world and progress', () => {
     const session = stockedSession();
-    const earlier = JSON.parse(serializeSession(session));
+    const earlier = JSON.parse(serializeLegacySession(session));
     delete earlier.session.options.waterDistribution;
     earlier.session.options.headlamp = 'character';
     const restored = deserializeSession(JSON.stringify(earlier));
@@ -255,7 +390,7 @@ describe('versioned local saves', () => {
 
   it('migrates the retired one-cell step comparison to two cells without replacing saved terrain', () => {
     const session = stockedSession();
-    const earlier = JSON.parse(serializeSession(session));
+    const earlier = JSON.parse(serializeLegacySession(session));
     earlier.session.options.stepHeightCells = 1;
     const restored = deserializeSession(JSON.stringify(earlier));
     expect(restored.options.stepHeightCells).toBe(2);
@@ -268,7 +403,7 @@ describe('versioned local saves', () => {
 
   it('loads earlier v1 equipment without a speed upgrade and preserves in-flight base swing timing', () => {
     const session = stockedSession();
-    const earlier = JSON.parse(serializeSession(session));
+    const earlier = JSON.parse(serializeLegacySession(session));
     delete earlier.session.tank.upgrades.digSpeed;
     earlier.session.digCooldown = 0.44;
     earlier.session.strikeTime = 0.10;
@@ -332,7 +467,7 @@ describe('versioned local saves', () => {
   });
 
   it('accepts earlier v1 saves without development credit metadata as zero adjustment', () => {
-    const earlier = JSON.parse(serializeSession(stockedSession()));
+    const earlier = JSON.parse(serializeLegacySession(stockedSession()));
     delete earlier.session.devCreditAdjustment;
     expect(deserializeSession(JSON.stringify(earlier)).devCreditAdjustment).toBe(0);
   });
@@ -351,9 +486,9 @@ describe('versioned local saves', () => {
   });
 
   it('still rejects lost water even when a development credit grant covers the balance', () => {
-    const session = createSession();
+    const session = createShallowSession();
     setDevCredits(session, 1000);
-    const damaged = JSON.parse(serializeSession(session));
+    const damaged = JSON.parse(serializeLegacySession(session));
     damaged.session.tank.water = 1;
     expect(() => deserializeSession(JSON.stringify(damaged))).toThrow(/water ledger mismatch/);
   });
@@ -377,7 +512,7 @@ describe('versioned local saves', () => {
   });
 
   it('preserves the ended state', () => {
-    const session = createSession();
+    const session = createShallowSession();
     let remaining = DEMO_DELIVERY_LIMIT;
     for (let i = 0; i < session.world.water.length && remaining > 0; i++) {
       const amount = Math.min(remaining,session.world.water[i]);
@@ -388,20 +523,20 @@ describe('versioned local saves', () => {
   });
 
   it('round-trips falling dirt and accepts earlier v1 saves without it', () => {
-    const session = createSession({ seed: 42 });
+    const session = createShallowSession({ seed: 42 });
     session.fallingDirt = [{ x: 240, y: 80.25, vy: 120 }];
     const restored = deserializeSession(serializeSession(session));
     expect(restored.fallingDirt).toEqual(session.fallingDirt);
     expect(restored.fallingDirt).not.toBe(session.fallingDirt);
-    const earlier = JSON.parse(serializeSession(session));
+    const earlier = JSON.parse(serializeLegacySession(session));
     delete earlier.session.fallingDirt;
     expect(deserializeSession(JSON.stringify(earlier)).fallingDirt).toEqual([]);
   });
 
   it('clears pre-existing small dirt obstacles once when loading an earlier active save', () => {
-    const session = createSession({ seed: 42 });
+    const session = createShallowSession({ seed: 42 });
     for (let x = 60; x < 63; x++) session.world.setMaterial(x, 20, 1);
-    const earlier = JSON.parse(serializeSession(session));
+    const earlier = JSON.parse(serializeLegacySession(session));
     delete earlier.session.fallingDirt;
     const restored = deserializeSession(JSON.stringify(earlier));
     expect(restored.fallingDirt).toHaveLength(3);

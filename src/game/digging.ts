@@ -1,7 +1,8 @@
 import { type Point, type World } from './world';
 
 export const DIG_REACH_PADDING = 12;
-export const MATERIAL_DURABILITY: Readonly<Record<number, number>> = { 1: 1, 2: 6, 3: Infinity };
+/** Earth, stone, foundation, sand, basalt, and granite retain stable saved IDs. */
+export const MATERIAL_DURABILITY: Readonly<Record<number, number>> = { 1: 3, 2: 6, 3: Infinity, 4: 1, 5: 10, 6: 16 };
 
 export interface StrikeResult {
   damaged: number;
@@ -34,6 +35,10 @@ export function damageStrike(
     || radius <= 0 || damage <= 0) return result;
 
   const size = world.cellSize;
+  const isIndestructible = (x: number, y: number): boolean => (
+    x <= 0 || y <= 0 || x >= world.width - 1 || y >= world.height - 1
+    || world.material[world.index(x, y)] === 3
+  );
   const withinBrush = (x: number, y: number): boolean => (
     ((x + 0.5) * size - center.x) ** 2 + ((y + 0.5) * size - center.y) ** 2 <= radius ** 2
   );
@@ -68,9 +73,10 @@ export function damageStrike(
           }
           continue;
         }
-        // Reinforced infrastructure intercepts the whole impact, even when the
-        // brush overlaps terrain behind it. It never receives damage cracks.
-        if (world.material[world.index(rayX, rayY)] === 3) {
+        // Infrastructure and the sealed boundary intercept the whole impact,
+        // including a face that overlaps the brush while its center does not.
+        // Neither may become lastRock and receive cracks or removal counts.
+        if (isIndestructible(rayX, rayY)) {
           blocked = true;
           break;
         }
@@ -89,7 +95,7 @@ export function damageStrike(
   }
 
   for (const index of struck) {
-    if (world.material[index] === 3) continue;
+    if (isIndestructible(index % world.width, Math.floor(index / world.width))) continue;
     result.damaged++;
     world.damage[index] += damage;
     if (world.damage[index] >= (MATERIAL_DURABILITY[world.material[index]] ?? 1)) {

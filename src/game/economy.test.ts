@@ -133,7 +133,32 @@ describe('equipment purchases', () => {
   it('changes radius, damage and climbing independently', () => {
     const tank = createTank(); tank.credits = 500;
     buyUpgrade(tank, 'digRadius'); buyUpgrade(tank, 'digDamage'); buyUpgrade(tank, 'climbSpeed');
-    expect(upgradeStats(tank)).toMatchObject({ digRadius: 16, digDamage: 2, climbSpeed: 90, capacity: 20 });
+    expect(upgradeStats(tank)).toMatchObject({ digRadius: 16, digDamage: 2, climbSpeed: 170, capacity: 20 });
+  });
+
+  it('offers seven independent jump and climb purchases plus a one-time double jump before the demo wall', () => {
+    const tank = createTank(); tank.credits = 1000; tank.water = 12;
+    const initial = upgradeStats(tank);
+    expect(initial).toMatchObject({ jumpSpeed: 275, doubleJump: false });
+    for (const [id, stat] of [['jumpPower', 'jumpSpeed'], ['climbSpeed', 'climbSpeed']] as const) {
+      const definition = UPGRADE_DEFINITIONS.find(item => item.id === id)!;
+      expect(definition.costs).toHaveLength(7);
+      expect(definition.costs.reduce((sum, cost) => sum + cost, 0)).toBeLessThan(400);
+      let previous = upgradeStats(tank)[stat];
+      for (let level = 1; level <= 7; level++) {
+        expect(buyUpgrade(tank, id)).toBe(true);
+        expect(tank.upgrades[id]).toBe(level);
+        expect(upgradeStats(tank)[stat]).toBeGreaterThan(previous);
+        previous = upgradeStats(tank)[stat];
+      }
+      expect(buyUpgrade(tank, id)).toBe(false);
+    }
+    expect(buyUpgrade(tank, 'doubleJump')).toBe(true);
+    expect(upgradeStats(tank).doubleJump).toBe(true);
+    expect(buyUpgrade(tank, 'doubleJump')).toBe(false);
+    expect(tank.water).toBe(12);
+    expect(tank.capacity).toBe(20);
+    expect(tank.upgrades.digRadius).toBe(0);
   });
 
   it('offers seven radius, three damage and three speed purchases without changing water or overcharging capped equipment', () => {

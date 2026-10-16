@@ -87,6 +87,7 @@ function restore(next: Session): void {
   vision.subsurfaceScan = session.subsurfaceScan; vision.lastSubsurfaceScanAt = session.lastSubsurfaceScanAt;
   const centre = playerCenter(session); aim = { x: centre.x + session.facing * 80, y: centre.y };
   lastVisionAt = -1; lastTerrainVersion = -1; lastAutoSaveAt = session.time;
+  renderControls();
   changeScreen(session.completed ? 'ended' : 'playing');
 }
 function loadRun(): void {
@@ -135,6 +136,7 @@ function statDescription(id: UpgradeId): string {
     case 'digDamage': return `Damage per strike ${stats.digDamage} → ${next.digDamage ?? stats.digDamage}`;
     case 'digSpeed': return `Seconds per swing ${stats.digInterval.toFixed(2)} → ${(next.digInterval ?? stats.digInterval).toFixed(2)}`;
     case 'climbSpeed': return `Climbing speed ${stats.climbSpeed} → ${next.climbSpeed ?? stats.climbSpeed}`;
+    case 'jumpPower': return `Jump launch speed ${stats.jumpSpeed} → ${next.jumpSpeed ?? stats.jumpSpeed}`;
     case 'capacity': return `Water capacity ${stats.capacity} → ${next.capacity ?? stats.capacity}`;
     case 'detectorRange': return session.tank.upgrades.detector
       ? `Detection radius ${stats.detectorRadius} → ${next.detectorRadius ?? stats.detectorRadius}`
@@ -173,7 +175,7 @@ async function applyDisplay(): Promise<void> {
   } catch { notice('This display mode could not be applied.'); }
 }
 function renderControls(): void {
-  const hints: [Action, string][] = [['left', 'Move'], ['up', 'Climb'], ['jump', 'Jump'], ['dig', 'Strike'], ['collect', 'Collect'], ['unload', 'Unload'], ['shop', 'Shop'], ['sonar', 'Sonar']];
+  const hints: [Action, string][] = [['left', 'Move'], ['up', 'Climb'], ['jump', session.tank.upgrades.doubleJump ? 'Jump / air jump' : 'Jump'], ['dig', 'Strike'], ['collect', 'Collect'], ['unload', 'Unload'], ['shop', 'Shop'], ['sonar', 'Sonar']];
   el('controls').innerHTML = hints.map(([action, label]) => `<span><kbd>${keyLabel(settings.bindings[action])}${action === 'left' ? ` / ${keyLabel(settings.bindings.right)}` : action === 'up' ? ` / ${keyLabel(settings.bindings.down)}` : ''}</kbd>${label}</span>`).join('');
   if (DEV_TOOLS_ENABLED) el('controls').insertAdjacentHTML('beforeend', '<span><kbd>&#96;</kbd>Dev panel</span>');
   el('menu').innerHTML = `Menu <kbd>${keyLabel(settings.bindings.pause)}</kbd>`;
@@ -191,7 +193,7 @@ el('panel').addEventListener('click', event => {
   void audio.unlock().catch(() => {}); audio.play('menu');
   if (target.dataset.binding) { bindingAction = target.dataset.binding as Action; target.textContent = 'Press input…'; return; }
   if (target.dataset.purchase) {
-    if (screen === 'shop' && nearHopper(session) && buyUpgrade(session.tank, target.dataset.purchase as UpgradeId)) { audio.play('buy'); saveRun(false); renderShop(); updateHUD(); }
+    if (screen === 'shop' && nearHopper(session) && buyUpgrade(session.tank, target.dataset.purchase as UpgradeId)) { audio.play('buy'); saveRun(false); renderShop(); renderControls(); updateHUD(); }
     return;
   }
   switch (target.dataset.action) {

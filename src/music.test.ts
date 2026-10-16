@@ -11,31 +11,32 @@ describe('adaptive score', () => {
     expect(half.returning).toBeGreaterThan(empty.returning);
     expect(half.returning).toBeLessThan(full.returning);
     expect(full.exploration).toBeLessThan(empty.exploration);
-    expect(musicMix(160, 1).returning).toBe(full.returning);
+    expect(musicMix(1600, 1).returning).toBe(full.returning);
   });
 
   it('replaces surface airiness with a lower underground pad gradually with depth', () => {
     const surface = musicMix(0, 0);
-    const middle = musicMix(80, 0);
-    const deep = musicMix(160, 0);
+    const middle = musicMix(800, 0);
+    const deep = musicMix(1600, 0);
     expect(surface.depth).toBe(0);
     expect(deep.depth).toBe(1);
     expect(surface.surface).toBe(1);
     expect(deep.surface).toBe(0);
     expect(middle.depth).toBeGreaterThan(0);
     expect(middle.depth).toBeLessThan(1);
-    expect(musicMix(79.99, 0.5).depth).toBeCloseTo(musicMix(80.01, 0.5).depth, 3);
+    expect(musicMix(200, 0).depth).toBeLessThan(0.1);
+    expect(musicMix(799.99, 0.5).depth).toBeCloseTo(musicMix(800.01, 0.5).depth, 3);
   });
 
   it('clamps scene inputs and treats invalid values as a quiet surface exploration', () => {
     expect(musicMix(-100, -2)).toEqual(musicMix(0, 0));
-    expect(musicMix(1000, 4)).toEqual(musicMix(160, 1));
+    expect(musicMix(10000, 4)).toEqual(musicMix(1600, 1));
     expect(musicMix(Number.NaN, Number.NaN)).toEqual(musicMix(0, 0));
   });
 
   it('crossfades continuously without overshoot, independent of the update rate', () => {
     const initial = musicMix(0, 0);
-    const target = musicMix(160, 1);
+    const target = musicMix(1600, 1);
     const first = advanceMusicMix(initial, target, 0.05);
     expect(first.returning).toBeGreaterThan(0);
     expect(first.returning).toBeLessThan(0.1);

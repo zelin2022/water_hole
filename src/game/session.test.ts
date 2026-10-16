@@ -57,8 +57,8 @@ describe('demo session', () => {
     expect(many.world.water).not.toEqual(fewer.world.water);
     for (const session of [many, fewer, selected]) {
       const repeated = createSession({ seed: 42, waterDistribution: session.options.waterDistribution });
-      expect(repeated.world.solid).toEqual(session.world.solid);
-      expect(repeated.world.water).toEqual(session.world.water);
+      expect(repeated.world.solid.every((value, index) => value === session.world.solid[index])).toBe(true);
+      expect(repeated.world.water.every((value, index) => value === session.world.water[index])).toBe(true);
       expect(totalWater(session.world) + session.tank.water + session.delivered).toBe(session.initialWater);
       expect(session.initialWater).toBeGreaterThan(DEMO_DELIVERY_LIMIT);
     }
@@ -89,7 +89,8 @@ describe('demo session', () => {
     expect(session.initialWater).toBeGreaterThan(DEMO_DELIVERY_LIMIT);
     expect(session.explored.length).toBe(session.world.solid.length);
     expect(session.completed).toBe(false);
-    expect(Array.from(createSession({ seed: 123 }).world.solid)).toEqual(Array.from(session.world.solid));
+    const repeated = createSession({ seed: 123 });
+    expect(repeated.world.solid.every((value, index) => value === session.world.solid[index])).toBe(true);
   });
 
   it('unloads gradually, can cancel, and never credits the same water twice', () => {
@@ -137,10 +138,14 @@ describe('demo session', () => {
     advance(session, 0.1, { digging: true, aim: { x: 300, y: 104 } });
     expect(session.world.isSolid(26, 26)).toBe(true);
     advance(session, 0.05, { digging: true, aim: { x: 300, y: 104 } });
-    expect(session.world.isSolid(26, 26)).toBe(false);
+    expect(session.world.isSolid(26, 26)).toBe(true);
+    expect(session.world.damage[session.world.index(26, 26)]).toBe(1);
     const impact = session.lastStrike;
     advance(session, 0.2, { digging: true, aim: { x: 300, y: 104 } });
     expect(session.lastStrike).toBe(impact);
+    expect(session.world.damage[session.world.index(26, 26)]).toBe(1);
+    advance(session, 0.9, { digging: true, aim: { x: 300, y: 104 } });
+    expect(session.world.isSolid(26, 26)).toBe(false);
   });
 
   it('applies faster upgrades as discrete swings with shorter wind-up instead of continuous digging', () => {
@@ -202,6 +207,7 @@ describe('demo session', () => {
 
   it('turns a small dirt remnant outside the pick brush into falling, nonblocking debris', () => {
     const session = fixture();
+    session.tank.upgrades.digDamage = 2; // Three damage breaks the earth support in one strike.
     for (let x = 26; x <= 31; x++) session.world.setMaterial(x, 26, 1);
     session.world.water[session.world.index(35, 29)] = 0.75;
     session.initialWater = totalWater(session.world);
@@ -217,6 +223,7 @@ describe('demo session', () => {
 
   it('also cleans an island severed by an intercepted face nearer than the circular brush', () => {
     const session = fixture();
+    session.tank.upgrades.digDamage = 2;
     // The x=88 face is between the player centre (80,104) and the brush;
     // the upper remnant lies outside the circular brush centered at (104,104).
     for (let y = 22; y < 30; y++) session.world.setMaterial(22, y, 1);
@@ -233,6 +240,30 @@ describe('demo session', () => {
     advance(session, 1, { collecting: true });
     advance(session, 1, { depositPressed: true });
     expect(totalWater(session.world) + session.tank.water + session.delivered).toBeCloseTo(session.initialWater, 4);
+  });
+
+  it('applies purchased jump power and double jump to real session movement', () => {
+    const session = fixture(); session.tank.credits = 250;
+    for (let level = 0; level < 7; level++) expect(buyUpgrade(session.tank, 'jumpPower')).toBe(true);
+    expect(buyUpgrade(session.tank, 'doubleJump')).toBe(true);
+    stepSession(session, { ...idle, jumpPressed: true }, 1 / 120);
+    expect(session.player.vy).toBeCloseTo(-1072.5, 5);
+    expect(session.player.airJumpAvailable).toBe(true);
+    stepSession(session, idle, 1 / 120);
+    stepSession(session, { ...idle, jumpPressed: true }, 1 / 120);
+    expect(session.player.vy).toBeCloseTo(-1072.5, 5);
+    expect(session.player.airJumpAvailable).toBe(false);
+  });
+
+  it('applies the highest purchased climbing speed while keeping a wall grip', () => {
+    const session = fixture(); session.tank.credits = 175;
+    for (let level = 0; level < 7; level++) expect(buyUpgrade(session.tank, 'climbSpeed')).toBe(true);
+    for (let y = 1; y < 30; y++) session.world.setSolid(22, y, true);
+    session.player.x = 72; session.player.y = 80;
+    session.player.grounded = false; session.player.wall = 1;
+    stepSession(session, { ...idle, up: true }, 1 / 60);
+    expect(80 - session.player.y).toBeCloseTo(680 / 60, 5);
+    expect(session.player.wall).toBe(1);
   });
 });
 

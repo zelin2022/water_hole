@@ -2,6 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { World, dig } from './world';
 
 describe('World terrain', () => {
+  it.each([4, 5, 6] as const)('supports material %i without losing collision, water protection, or partial damage', (material) => {
+    const world = new World(8, 6);
+    const cell = world.index(2, 3);
+    world.setMaterial(2, 3, material);
+    world.damage[cell] = 0.5;
+    world.setSolid(2, 3, true);
+    expect(world.material[cell]).toBe(material);
+    expect(world.damage[cell]).toBe(0.5);
+    expect(world.isSolid(2, 3)).toBe(true);
+    world.setSolid(2, 3, false);
+    world.water[cell] = 0.75;
+    expect(() => world.setMaterial(2, 3, material)).toThrow(/water/i);
+    expect(world.water[cell]).toBe(0.75);
+  });
+
   it('starts as empty space enclosed by an indestructible boundary', () => {
     const world = new World(8, 6);
 

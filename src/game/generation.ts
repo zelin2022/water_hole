@@ -39,6 +39,17 @@ const RESERVOIR_BANDS: readonly ReservoirBand[] = [
       'fewer-large': [120, 140, 155, 160, 170, 175, 180],
     },
   },
+  // Keep the original shallow placement draws, then continue regular discovery
+  // opportunities through the expanded site. Legacy comparisons retain equal
+  // cavity capacity per band; the default still independently samples size.
+  ...Array.from({ length: 17 }, (_, band) => ({
+    slots: [44 + 300 + band * 100 - 12, 44 + 300 + band * 100 + 12]
+      .flatMap((row) => [55, 105, 180, 250, 355].map((column) => [column, row] as const)),
+    masses: {
+      'many-small': [60, 75, 85, 95, 105, 115, 125, 140, 145, 155],
+      'fewer-large': [120, 140, 155, 160, 170, 175, 180],
+    },
+  })),
 ];
 
 export interface GeneratedSite {
@@ -52,7 +63,9 @@ export interface GeneratedSite {
 /** A bounded geological site with a guaranteed starter route and depth-biased reservoirs. */
 export function generateSite(seed: number, distribution: WaterDistribution = DEFAULT_WATER_DISTRIBUTION): GeneratedSite {
   const random = seededRandom(seed);
-  const world = new World(384, 256, 4);
+  // Surface row 44 plus 2,000 m of standing-player depth, eight player cells,
+  // and the sealed bottom boundary. HUD metres are terrain rows, not pixels.
+  const world = new World(384, 2053, 4);
   const phase = random() * Math.PI * 2;
   const surfaceRow = 44;
 
@@ -61,10 +74,27 @@ export function generateSite(seed: number, distribution: WaterDistribution = DEF
     // beyond the starter route retains its seeded undulations.
     const surface = x <= STARTER_POCKET.earthRight ? surfaceRow
       : surfaceRow + Math.round(Math.sin(x / 33 + phase) * 5 + Math.sin(x / 13 + phase) * 2);
+    // Column constants keep the deeper grid inexpensive without changing the
+    // seeded shape or consuming random draws for each terrain cell.
+    const stoneStart = 77 + Math.sin(x / 37 + phase) * 9;
+    const stonePhase = Math.sin(x / 31 + phase) * 1.3;
+    const basaltStart = 250 + Math.sin(x / 41 + phase) * 45;
+    const basaltPhase = Math.sin(x / 23 + phase) * 2.1;
+    const graniteStart = 850 + Math.sin(x / 57 + phase) * 90;
+    const granitePhase = Math.sin(x / 35 + phase) * 1.7;
+    const sandColumn = Math.sin(x / 8 + phase) > 0.88;
     for (let y = surface; y < world.height - 1; y++) {
-      const stone = y > 77 + Math.sin(x / 37 + phase) * 9
-        && Math.sin(y / 13 + Math.sin(x / 31 + phase) * 1.3) > -0.2;
-      world.setMaterial(x, y, stone ? 2 : 1);
+      const stone = y > stoneStart && Math.sin(y / 13 + stonePhase) > -0.2;
+      const depth = y - surfaceRow;
+      // Wavy, overlapping deposits leave mixed routes rather than unbroken
+      // upgrade gates. Basalt becomes common first; granite dominates deeper.
+      const basalt = depth > basaltStart && Math.sin(y / 29 + basaltPhase) > -0.4;
+      const granite = depth > graniteStart && Math.sin(y / 47 + granitePhase) > -0.35;
+      // A few small surface deposits offer one-hit sand. They do not form a
+      // continuous easy layer or extend below sixteen local surface metres.
+      const sand = y - surface < 16 && sandColumn
+        && Math.sin((y - surface) / 3 + x / 19 + phase) > 0.65;
+      world.setMaterial(x, y, sand ? 4 : granite ? 6 : basalt ? 5 : stone ? 2 : 1);
     }
   }
 

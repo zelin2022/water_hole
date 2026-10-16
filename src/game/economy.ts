@@ -1,7 +1,7 @@
 import type { Point, World } from './world';
 import { collectWater } from './water';
 
-export type UpgradeId = 'digRadius' | 'digDamage' | 'digSpeed' | 'climbSpeed' | 'capacity' | 'detector' | 'detectorRange' | 'wallDig' | 'sonar' | 'subsurfaceScanner';
+export type UpgradeId = 'digRadius' | 'digDamage' | 'digSpeed' | 'jumpPower' | 'doubleJump' | 'climbSpeed' | 'capacity' | 'detector' | 'detectorRange' | 'wallDig' | 'sonar' | 'subsurfaceScanner';
 export type UpgradeAvailability = 'unavailable' | 'unaffordable' | 'available';
 export interface UpgradeDefinition {
   id: UpgradeId;
@@ -16,7 +16,9 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   { id: 'digRadius', name: 'Wider pick', description: 'Increase the radius of each impact.', costs: [10, 15, 20, 25, 30, 35, 40] },
   { id: 'digDamage', name: 'Reinforced pick', description: 'Break harder terrain in fewer strikes.', costs: [10, 15, 25] },
   { id: 'digSpeed', name: 'Rapid pick', description: 'Swing the pick faster, with a shorter wind-up.', costs: [10, 20, 30] },
-  { id: 'climbSpeed', name: 'Climbing assist', description: 'Climb walls faster.', costs: [35, 80] },
+  { id: 'jumpPower', name: 'Powered boots', description: 'Jump higher and launch upward faster.', costs: [10, 15, 20, 25, 30, 35, 40] },
+  { id: 'doubleJump', name: 'Air jump', description: 'Jump once more in midair; landing or a wall grip recharges it.', costs: [35] },
+  { id: 'climbSpeed', name: 'Climbing assist', description: 'Climb walls faster.', costs: [10, 15, 20, 25, 30, 35, 40] },
   { id: 'capacity', name: 'Larger tank', description: 'Carry more water on each trip.', costs: [60, 120] },
   { id: 'detector', name: 'Water detector', description: 'Point toward nearby water within 160 units.', costs: [25] },
   { id: 'detectorRange', name: 'Detector amplifier', description: 'Increase the water detection radius.', costs: [45, 95], requires: 'detector' },
@@ -35,6 +37,8 @@ export interface Tank {
 }
 export const UPGRADE_COST = 60;
 export const CREDIT_EPSILON = 1e-8;
+export const JUMP_SPEEDS = [275, 350, 440, 540, 650, 780, 920, 1080] as const;
+export const CLIMB_SPEEDS = [130, 170, 220, 280, 350, 440, 550, 680] as const;
 
 export function createTank(capacity = 20): Tank {
   const upgrades = Object.fromEntries(UPGRADE_DEFINITIONS.map(definition => [definition.id, 0])) as Record<UpgradeId, number>;
@@ -48,7 +52,12 @@ export function upgradeStats(tank: Tank) {
     digDamage: [1, 2, 3, 6][tank.upgrades.digDamage],
     digInterval,
     digWindup: digInterval / 4,
-    climbSpeed: [65, 90, 120][tank.upgrades.climbSpeed],
+    jumpSpeed: JUMP_SPEEDS[tank.upgrades.jumpPower],
+    // Wall-origin jumps are a quicker technique than early climbing gear, but
+    // their best repeatable two-jump ascent stays below matched climbing gear.
+    wallJumpSpeed: Math.min(JUMP_SPEEDS[tank.upgrades.jumpPower], 1.6 * CLIMB_SPEEDS[tank.upgrades.jumpPower]),
+    doubleJump: tank.upgrades.doubleJump > 0,
+    climbSpeed: CLIMB_SPEEDS[tank.upgrades.climbSpeed],
     capacity: [20, 40, 60][tank.upgrades.capacity],
     detectorRadius: tank.upgrades.detector ? [160, 240, 320][tank.upgrades.detectorRange] : 0,
   };

@@ -11,6 +11,9 @@ export interface Player {
   wall: -1 | 0 | 1;
   suppressedWall: -1 | 0 | 1;
   wallJumpTime: number;
+  airJumpAvailable: boolean;
+  /** Keeps wall-origin air jumps balanced until landing or the next grip. */
+  wallJumpChain: boolean;
 }
 
 export interface PlayerInput {
@@ -22,12 +25,13 @@ export interface PlayerInput {
 }
 
 export function createPlayer(x: number, y: number): Player {
-  return { x, y, vx: 0, vy: 0, width: 16, height: 32, grounded: false, wall: 0, suppressedWall: 0, wallJumpTime: 0 };
+  return { x, y, vx: 0, vy: 0, width: 16, height: 32, grounded: false, wall: 0, suppressedWall: 0, wallJumpTime: 0,
+    airJumpAvailable: true, wallJumpChain: false };
 }
 
 const EPSILON = 0.001;
 const MOVE_SPEED = 150;
-const CLIMB_SPEED = 65;
+const CLIMB_SPEED = 130;
 const GRAVITY = 900;
 const JUMP_SPEED = 275;
 const MAX_FALL_SPEED = 420;
@@ -40,6 +44,9 @@ export const DEFAULT_STEP_HEIGHT_CELLS = 2;
 
 export interface PlayerMovementOptions {
   climbSpeed?: number;
+  jumpSpeed?: number;
+  wallJumpSpeed?: number;
+  doubleJump?: boolean;
   stepHeightCells?: 1 | 2;
 }
 
@@ -50,19 +57,26 @@ export function stepPlayer(world: World, player: Player, input: PlayerInput, dt:
   const step = dt / steps;
   for (let i = 0; i < steps; i++) {
     updatePlayer(world, player, input, step, i === 0 && input.jumpPressed,
-      options.climbSpeed ?? CLIMB_SPEED, world.cellSize * (options.stepHeightCells ?? DEFAULT_STEP_HEIGHT_CELLS));
+      options.climbSpeed ?? CLIMB_SPEED, world.cellSize * (options.stepHeightCells ?? DEFAULT_STEP_HEIGHT_CELLS),
+      options.jumpSpeed ?? JUMP_SPEED, options.wallJumpSpeed ?? 1.6 * CLIMB_SPEED, options.doubleJump ?? false);
   }
 }
 
-function updatePlayer(world: World, player: Player, input: PlayerInput, dt: number, jumpPressed: boolean, climbSpeed: number, stepHeight: number): void {
+function updatePlayer(world: World, player: Player, input: PlayerInput, dt: number, jumpPressed: boolean, climbSpeed: number, stepHeight: number,
+  jumpSpeed: number, wallJumpSpeed: number, doubleJump: boolean): void {
   const horizontal = Number(input.right) - Number(input.left);
   player.grounded = player.vy >= 0 && touchesFloor(world, player);
   const startedGrounded = player.grounded;
+  if (player.grounded) {
+    player.airJumpAvailable = true;
+    player.wallJumpChain = false;
+  }
 
   if (player.suppressedWall && !touchesWall(world, player, player.suppressedWall)) {
     player.suppressedWall = 0;
   }
   if (player.wall && !hasClimbingSupport(world, player, player.wall, WALL_CONTOUR_REACH)) {
+    player.wallJumpChain = true;
     player.wall = 0;
     player.vy = 0;
   }
@@ -71,15 +85,19 @@ function updatePlayer(world: World, player: Player, input: PlayerInput, dt: numb
     const previousWall = player.wall;
     player.suppressedWall = previousWall;
     player.wall = 0;
+    player.wallJumpChain = true;
     if (jumpPressed) {
       player.vx = -previousWall * 120;
-      player.vy = -260;
+      player.vy = -wallJumpSpeed;
       // A short impulse allows the jump to separate even if toward-wall input is held.
       player.wallJumpTime = 0.12;
     }
   } else if (jumpPressed && player.grounded) {
-    player.vy = -JUMP_SPEED;
+    player.vy = -jumpSpeed;
     player.grounded = false;
+  } else if (jumpPressed && doubleJump && player.airJumpAvailable && !player.wall) {
+    player.vy = -(player.wallJumpChain ? wallJumpSpeed : jumpSpeed);
+    player.airJumpAvailable = false;
   }
 
   if (player.wall) {
@@ -93,6 +111,7 @@ function updatePlayer(world: World, player: Player, input: PlayerInput, dt: numb
       if (!player.grounded && player.vy < 0) {
         player.vy = -Math.sqrt(2 * GRAVITY * (MIN_WALL_CONTACT + world.cellSize));
       }
+      player.wallJumpChain = !player.grounded;
       player.wall = 0;
     }
     return;
@@ -119,6 +138,8 @@ function updatePlayer(world: World, player: Player, input: PlayerInput, dt: numb
     player.wall = contact;
     player.vy = 0;
     player.vx = 0;
+    player.airJumpAvailable = true;
+    player.wallJumpChain = false;
   }
 }
 

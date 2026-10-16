@@ -6,7 +6,7 @@ import { detachSmallDirt, DIRT_TERMINAL_SPEED } from './dirt';
 import { DEFAULT_STEP_HEIGHT_CELLS } from './player';
 import { MATERIAL_DURABILITY } from './digging';
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 const MAX_CELLS = 1024 * 1024;
 const MAX_TERRAIN_DAMAGE = Math.max(...Object.values(MATERIAL_DURABILITY).filter(Number.isFinite));
 
@@ -15,10 +15,22 @@ export function serializeSession(session: Session): string {
   return JSON.stringify({
     version: SAVE_VERSION,
     world: { width: world.width, height: world.height, cellSize: world.cellSize,
-      solid: Array.from(world.solid), material: Array.from(world.material),
-      damage: Array.from(world.damage), water: Array.from(world.water) },
-    session: { ...state, explored: Array.from(explored) },
+      solid: encodeGrid(world.solid), material: encodeGrid(world.material),
+      damage: encodeGrid(world.damage), water: encodeGrid(world.water) },
+    session: { ...state, explored: encodeGrid(explored) },
   });
+}
+
+/** Lossless runs keep large, mostly-solid sites small enough for local storage. */
+function encodeGrid(values: Uint8Array | Float32Array): { encoding: 'rle'; runs: number[] } {
+  const runs: number[] = [];
+  let start = 0;
+  for (let index = 1; index <= values.length; index++) {
+    if (index < values.length && values[index] === values[start]) continue;
+    runs.push(values[start], index - start);
+    start = index;
+  }
+  return { encoding: 'rle', runs };
 }
 
 function assert(condition: unknown, reason: string): asserts condition {
@@ -37,23 +49,47 @@ function numericArray(value: unknown, count: number, minimum: number, maximum: n
   return Array.isArray(value) && value.length === count && value.every(item => finite(item, minimum, maximum) && (!integral || Number.isInteger(item)));
 }
 
+/** Validate both run lengths and values before expansion; encoded counts cannot allocate arbitrarily. */
+function decodeGrid(value: unknown, count: number, minimum: number, maximum: number,
+  integral: boolean, reason: string, compact: boolean): Uint8Array | Float32Array {
+  const output = integral ? new Uint8Array(count) : new Float32Array(count);
+  if (!compact) {
+    assert(numericArray(value, count, minimum, maximum, integral), reason);
+    output.set(value);
+    return output;
+  }
+  assert(record(value) && value.encoding === 'rle' && Array.isArray(value.runs)
+    && value.runs.length > 0 && value.runs.length % 2 === 0 && value.runs.length <= count * 2, reason);
+  let expanded = 0;
+  for (let index = 0; index < value.runs.length; index += 2) {
+    const amount = value.runs[index], length = value.runs[index + 1];
+    assert(finite(amount, minimum, maximum) && (!integral || Number.isInteger(amount))
+      && Number.isInteger(length) && length > 0 && length <= count - expanded, reason);
+    output.fill(amount, expanded, expanded + length);
+    expanded += length;
+  }
+  assert(expanded === count, reason);
+  return output;
+}
+
 /** Validate before allocating a world; a failed load leaves the active run untouched. */
 export function deserializeSession(json: string): Session {
   let data: unknown;
   try { data = JSON.parse(json); } catch { throw new Error('Invalid save: unreadable JSON'); }
-  assert(record(data) && data.version === SAVE_VERSION, 'unsupported version');
+  assert(record(data) && (data.version === 1 || data.version === SAVE_VERSION), 'unsupported version');
   const raw = data.world;
   const state = data.session;
   assert(record(raw) && record(state), 'missing world or session');
   assert(Number.isInteger(raw.width) && Number.isInteger(raw.height)
-    && raw.width >= 8 && raw.height >= 8 && raw.width <= 2048 && raw.height <= 2048
+    && raw.width >= 8 && raw.height >= 8 && raw.width <= 2048 && raw.height <= 4096
     && raw.width * raw.height <= MAX_CELLS && finite(raw.cellSize, 1, 32), 'world dimensions');
   const count = raw.width * raw.height;
-  assert(numericArray(raw.solid, count, 0, 1, true), 'solid cells');
-  assert(numericArray(raw.material, count, 0, 3, true), 'terrain materials');
-  assert(numericArray(raw.damage, count, 0, MAX_TERRAIN_DAMAGE), 'terrain damage');
-  assert(numericArray(raw.water, count, 0, 1.000001), 'liquid cells');
-  assert(numericArray(state.explored, count, 0, 1, true), 'exploration');
+  const compact = data.version === SAVE_VERSION;
+  raw.solid = decodeGrid(raw.solid, count, 0, 1, true, 'solid cells', compact);
+  raw.material = decodeGrid(raw.material, count, 0, 6, true, 'terrain materials', compact);
+  raw.damage = decodeGrid(raw.damage, count, 0, MAX_TERRAIN_DAMAGE, false, 'terrain damage', compact);
+  raw.water = decodeGrid(raw.water, count, 0, 1.000001, false, 'liquid cells', compact);
+  state.explored = decodeGrid(state.explored, count, 0, 1, true, 'exploration', compact);
   for (let index = 0; index < count; index++) {
     const x = index % raw.width, y = Math.floor(index / raw.width);
     const boundary = x === 0 || y === 0 || x === raw.width - 1 || y === raw.height - 1;
@@ -114,6 +150,8 @@ export function deserializeSession(json: string): Session {
   // Earlier v1 equipment predates the reserved scanner and mining speed tiers.
   if (tank.upgrades.subsurfaceScanner === undefined) tank.upgrades.subsurfaceScanner = 0;
   if (tank.upgrades.digSpeed === undefined) tank.upgrades.digSpeed = 0;
+  if (tank.upgrades.jumpPower === undefined) tank.upgrades.jumpPower = 0;
+  if (tank.upgrades.doubleJump === undefined) tank.upgrades.doubleJump = 0;
   assert(Object.keys(tank.upgrades).length === UPGRADE_DEFINITIONS.length, 'upgrade entries');
   for (const definition of UPGRADE_DEFINITIONS) {
     const level = tank.upgrades[definition.id];
@@ -130,6 +168,11 @@ export function deserializeSession(json: string): Session {
     && finite(player.vx, -10000, 10000) && finite(player.vy, -10000, 10000)
     && typeof player.grounded === 'boolean' && [-1, 0, 1].includes(player.wall)
     && [-1, 0, 1].includes(player.suppressedWall) && finite(player.wallJumpTime, 0, 0.12), 'player state');
+  // Older airborne saves receive no new midair jump. Ground/wall contact can
+  // replenish it normally, while current saves retain an already consumed jump.
+  if (player.airJumpAvailable === undefined) player.airJumpAvailable = player.grounded || player.wall !== 0;
+  if (player.wallJumpChain === undefined) player.wallJumpChain = !player.grounded && player.wall === 0;
+  assert(typeof player.airJumpAvailable === 'boolean' && typeof player.wallJumpChain === 'boolean', 'player jump state');
   for (let y = Math.floor(player.y / raw.cellSize); y <= Math.floor((player.y + player.height - 0.001) / raw.cellSize); y++) {
     for (let x = Math.floor(player.x / raw.cellSize); x <= Math.floor((player.x + player.width - 0.001) / raw.cellSize); x++) {
       assert(raw.solid[y * raw.width + x] === 0, 'player inside terrain');
@@ -142,7 +185,9 @@ export function deserializeSession(json: string): Session {
   world.water.set(raw.water);
   world.terrainVersion = 1;
   const accounted = totalWater(world) + tank.water + state.delivered;
-  assert(Math.abs(accounted - state.initialWater) <= 0.05 + state.initialWater * 0.0001, 'water ledger mismatch');
+  // Large sites contain far more water, but must not silently allow whole units
+  // to disappear. Float32 transfer drift remains far below one collected unit.
+  assert(Math.abs(accounted - state.initialWater) <= 0.05 + state.initialWater * 0.000001, 'water ledger mismatch');
   // Existing active v1 runs may contain old floating obstacles. Migrate once;
   // completed runs retain their frozen terrain and new saves keep their debris.
   if (state.fallingDirt === undefined && !state.completed) fallingDirt = detachSmallDirt(world);

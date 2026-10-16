@@ -129,7 +129,7 @@ export function stepSession(session: Session, input: GameInput, dt: number): voi
   stepDigging(session, input, dt);
   stepFallingDirt(session.world, session.fallingDirt, dt);
   stepPlayer(session.world, session.player, input, dt, {
-    climbSpeed: upgradeStats(session.tank).climbSpeed, stepHeightCells: session.options.stepHeightCells,
+    ...upgradeStats(session.tank), stepHeightCells: session.options.stepHeightCells,
   });
   stepWater(session.world, dt);
   const center = playerCenter(session);

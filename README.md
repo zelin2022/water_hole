@@ -1,6 +1,6 @@
 # Water Hole
 
-A finite 2D excavation game built with TypeScript, Canvas, Vite, and Electron. Break earth and stone with deliberate pickaxe strikes, collect exposed water, climb back to the exchange, and improve your equipment.
+A finite 2D excavation game built with TypeScript, Canvas, Vite, and Electron. Break layered terrain with deliberate pickaxe strikes, collect exposed water, climb back to the exchange, and improve your equipment. New expeditions reach **2000 metres** on the depth display.
 
 The **provisional demo** implements the agreed systems for playtesting and balance. Artifact searching belongs to the full game. The demo ends at a cumulative delivery limit with a thank-you screen; that limit is not presented as a mission.
 
@@ -28,7 +28,7 @@ New Game defaults to **Three sizes / depth weighted**: small pockets hold **30�
 
 Every pocket, including the starter, independently has a **1-in-5 chance of starting dry**. Dry pockets have the same size and shape as their wet counterparts; the water detector responds only to actual water. Larger standalone hollow caves are deferred until after the demo.
 
-The earlier many-small and fewer-large layouts remain selectable as **legacy comparisons**. Those two layouts retain their matched cavity-capacity budgets; actual water varies with the dry rolls. The seed and selected layout reproduce the finite site, and save/load preserves the choice and actual world. Existing saved maps keep their original pockets and machine placement. Provisional builds also offer a full-visibility checkbox for testing.
+The default and legacy many-small layouts each contain **198 pockets**; legacy fewer-large contains **135**. The two legacy comparisons retain matched cavity-capacity budgets, totaling 20,640 before dry rolls; actual water varies with dryness. The seed and selected layout reproduce the finite site, and save/load preserves the choice and actual world. Existing saved maps keep their original dimensions, pockets, and machine placement; start a new expedition to obtain the deeper map. Provisional builds also offer a full-visibility checkbox for testing.
 
 Dark caves with temporary sonar outlines are now the standard. Explored caves become completely dark outside current illumination and active scan echoes. The headlamp follows mouse aim, and the worker's head visibly rotates with it. Older saves adopt these selected modes while keeping their terrain, water, equipment, and progress.
 
@@ -40,7 +40,9 @@ Clinging needs hand/torso contact backed by connected wall terrain. Uneven dug f
 
 Cave sonar helps with wayfinding: its wave follows connected open tunnels around bends and briefly traces their walls. Terrain blocks the pulse, keeping sealed caves and water pockets hidden. Reveals appear quickly and fade over half a second; the cooldown remains 15 seconds. The earlier penetrating scan is preserved as the **Subsurface scanner**, reserved and hidden from the shop with no player control assigned. Existing Cave sonar purchases retain access to the new navigation pulse.
 
-Detached dirt islands of up to three cells fall away and disappear on landing. The fragments do not block movement or displace water. Larger islands and stone stay intact.
+There are five diggable materials: **sand 1 HP, earth 3 HP, stone 6 HP, basalt 10 HP, and granite 16 HP**. Sand appears sparsely within sixteen metres of the local surface. Wavy basalt and granite deposits become more common deeper down, leaving mixed routes rather than complete upgrade barriers. Reinforced infrastructure and the map boundary are indestructible.
+
+Detached earth or sand islands of up to three cells fall away and disappear on landing. The fragments do not block movement or displace water. Larger islands and harder materials stay intact.
 
 ## Default controls
 
@@ -48,7 +50,7 @@ Detached dirt islands of up to three cells fall away and disappear on landing. T
 | --- | --- |
 | A / D | Move, including air steering |
 | W / S | Climb up/down while attached |
-| Space | Ground jump or wall jump |
+| Space | Ground jump, wall jump, or purchased air jump |
 | Direction away from the wall | Detach |
 | Mouse + hold left click | Aim and repeat pickaxe strikes |
 | Hold E | Collect nearby exposed water |
@@ -57,9 +59,13 @@ Detached dirt islands of up to three cells fall away and disappear on landing. T
 | Q after installing cave sonar | Trace connected tunnel outlines |
 | Escape | Pause / return from menus |
 
-Climbing is unlimited and water is harmless. The shop offers pick radius, pick damage, swing speed, climb speed, tank capacity, water detection/range, wall digging, and sonar. Mining has seven radius purchases (12 → 76 pixels), three damage purchases (1 → 6), and three speed purchases (0.48 → 0.16 seconds per swing). Stone has 6 durability, taking 6, 3, 2, then 1 impact across the damage tiers; earth remains 1. The full mining set costs 285 credits, with smaller wind-ups at higher speed so strikes remain discrete. Numerical balance is provisional. Older saves receive an unpurchased speed track and keep existing radius/damage stats and partial terrain damage. Settings include display presets/fullscreen, music/SFX volume, and keybindings. Escape remains reserved for pause/menu navigation.
+Climbing is unlimited and water is harmless. The shop offers mining, jumping, climbing, tank capacity, water detection/range, wall digging, and sonar. Mining has seven radius purchases (12 → 76 pixels), three damage purchases (1 → 6), and three speed purchases (0.48 → 0.16 seconds per swing). Stone takes 6, 3, 2, then 1 impact across the damage tiers. The full mining set costs 285 credits, with shorter wind-ups at higher speed so strikes remain discrete.
 
-The original synthesized ambient music now varies continuously with current depth and tank fill. Empty tanks favour exploration; fuller tanks bring in a returning motif, while deeper work adds lower tones. Layers blend smoothly rather than restarting the score when a boundary is crossed. Music and SFX keep separate volume controls.
+Jump power and climbing assist each offer **seven purchases**, costing 175 credits per complete track. Jump launch speed rises from 275 to 1080 world pixels per second; climbing rises from 130 to 680. The **35-credit air jump** adds one extra jump before landing or gripping a wall. Wall grips recharge it, allowing repeated wall jump → air jump → reattach sequences. Their launch speed is tuned separately so optimized repeated ascent stays at or below climbing assist of the same upgrade tier. Mining, both mobility tracks, and air jump total 670 credits, so the unchanged demo cutoff supports different equipment choices across runs rather than maximizing every track in one expedition. Numerical balance remains provisional.
+
+Settings include display presets/fullscreen, music/SFX volume, and keybindings. Escape remains reserved for pause/menu navigation.
+
+The original synthesized ambient music varies continuously with current depth and tank fill. Empty tanks favour exploration; fuller tanks bring in a returning motif, while lower tones build across the first 1600 metres. Layers blend smoothly rather than restarting the score when a boundary is crossed. Music and SFX keep separate volume controls.
 
 Unavailable and fully installed upgrades are hidden. Eligible upgrades without enough credits show their price in red; the install button becomes available when funded. Buying a water detector reveals its range upgrades.
 
@@ -73,7 +79,7 @@ The build flag `VITE_DEV_TOOLS=true` in `.env` enables these tools for current b
 
 ## Saving
 
-One local slot supports manual Save/Load, Continue, autosaving every 30 seconds, and saving when returning to the menu or quitting. New Game confirms before replacing an expedition. Terrain, partial damage, water, equipment, exploration, comparison choices, and sonar/cutoff state are preserved. Browser development and the packaged desktop game use separate local storage.
+One local slot supports manual Save/Load, Continue, autosaving every 30 seconds, and saving when returning to the menu or quitting. New Game confirms before replacing an expedition. Compact version 2 saves preserve terrain, partial damage, water, equipment, exploration, comparison choices, sonar/cutoff state, and whether the air jump has been spent. Version 1 saves still load with their actual world dimensions; missing jump equipment starts unpurchased, and loading does not replenish an airborne jump. Browser development and the packaged desktop game use separate local storage.
 
 ## Standalone packages
 

@@ -9,7 +9,7 @@ export const DIRT_TERMINAL_SPEED = 640;
 
 /**
  * A bounded flood fill needs at most four dirt cells to reject a large island.
- * Stone or reinforced foundation anchors dirt, even when itself floating. Strike
+ * Stone, reinforced foundation, basalt, and granite anchor loose earth or sand. Strike
  * cleanup only considers nearby seeds; generation uses the one-time full scan.
  */
 export function detachSmallDirt(world: World, region?: DirtRegion): FallingDirt[] {
@@ -21,11 +21,12 @@ export function detachSmallDirt(world: World, region?: DirtRegion): FallingDirt[
   const maxY = region ? Math.min(world.height - 2, Math.floor((region.center.y + region.radius) / size)) : world.height - 2;
   const examined = new Set<number>();
   const particles: FallingDirt[] = [];
+  const isLoose = (material: number): boolean => material === 1 || material === 4;
 
   for (let y = minY; y <= maxY; y++) {
     for (let x = minX; x <= maxX; x++) {
       const seed = world.index(x, y);
-      if (world.material[seed] !== 1 || examined.has(seed)) continue;
+      if (!isLoose(world.material[seed]!) || examined.has(seed)) continue;
       const component = [seed];
       const included = new Set(component);
       let attached = false;
@@ -33,8 +34,9 @@ export function detachSmallDirt(world: World, region?: DirtRegion): FallingDirt[
         const index = component[cursor];
         examined.add(index);
         for (const neighbor of [index - 1, index + 1, index - world.width, index + world.width]) {
-          if (world.material[neighbor] >= 2) { attached = true; break; }
-          if (world.material[neighbor] !== 1 || included.has(neighbor)) continue;
+          const material = world.material[neighbor]!;
+          if (material !== 0 && !isLoose(material)) { attached = true; break; }
+          if (!isLoose(material) || included.has(neighbor)) continue;
           included.add(neighbor);
           component.push(neighbor);
           if (component.length > MAX_DIRT_ISLAND) { attached = true; break; }

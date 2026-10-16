@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createPlayer, stepPlayer, type PlayerInput } from './player';
 import { World } from './world';
+import { createTank, upgradeStats } from './economy';
 
 const idle: PlayerInput = { left: false, right: false, up: false, down: false, jumpPressed: false };
 
@@ -176,13 +177,13 @@ describe('player movement', () => {
     const player = createPlayer(side < 0 ? 124 : 104, 92);
     tick(world, player);
     expect(player.wall).toBe(side);
-    for (let i = 0; i < 64; i++) {
+    for (let i = 0; i < 32; i++) {
       tick(world, player, { up: true });
       expect(player.wall).toBe(side);
       expectOutsideTerrain(world, player);
     }
     expect(player.y).toBeLessThan(36);
-    for (let i = 0; i < 124; i++) {
+    for (let i = 0; i < 62; i++) {
       tick(world, player, { down: true });
       expect(player.wall).toBe(side);
       expectOutsideTerrain(world, player);
@@ -367,6 +368,115 @@ describe('player movement', () => {
     tick(world, player, { jumpPressed: true }, 10);
     expect(player.y).toBeGreaterThanOrEqual(156);
     expect(player.wall).toBe(0);
+  });
+});
+
+describe('jump and climbing progression', () => {
+  function tallRoom(side: -1 | 1 = 1) {
+    const world = new World(100, 3200, 4);
+    for (let y = 1; y < world.height - 1; y++) world.setSolid(30, y, true);
+    const player = createPlayer(side < 0 ? 124 : 104, 11000);
+    stepPlayer(world, player, idle, 1 / 120);
+    expect(player.wall).toBe(side);
+    return { world, player };
+  }
+
+  it('increases both launch speed and actual jump height at every jump tier', () => {
+    const world = new World(100, 1000, 4);
+    for (let x = 1; x < 99; x++) world.setSolid(x, 900, true);
+    const tank = createTank();
+    let previousSpeed = 0, previousHeight = 0;
+    for (let level = 0; level <= 7; level++) {
+      tank.upgrades.jumpPower = level;
+      const player = createPlayer(160, 3568);
+      const options = upgradeStats(tank);
+      stepPlayer(world, player, { ...idle, jumpPressed: true }, 1 / 120, options);
+      const launchSpeed = -player.vy;
+      let highest = player.y;
+      for (let frame = 0; frame < 400 && !player.grounded; frame++) {
+        stepPlayer(world, player, idle, 1 / 120, options);
+        highest = Math.min(highest, player.y);
+      }
+      expect(launchSpeed).toBeGreaterThan(previousSpeed);
+      expect(3568 - highest).toBeGreaterThan(previousHeight);
+      expect(player.grounded).toBe(true);
+      previousSpeed = launchSpeed; previousHeight = 3568 - highest;
+    }
+  });
+
+  it('grants exactly one air jump and refills it when landing', () => {
+    const world = room(), player = createPlayer(80, 168);
+    const options = { doubleJump: true };
+    stepPlayer(world, player, { ...idle, jumpPressed: true }, 1 / 120, options);
+    stepPlayer(world, player, idle, 0.1, options);
+    stepPlayer(world, player, { ...idle, jumpPressed: true }, 1 / 120, options);
+    expect(player.vy).toBeLessThan(-260);
+    expect(player.airJumpAvailable).toBe(false);
+    const speed = player.vy;
+    stepPlayer(world, player, { ...idle, jumpPressed: true }, 1 / 120, options);
+    expect(player.vy).toBeGreaterThan(speed);
+    for (let i = 0; i < 200; i++) stepPlayer(world, player, idle, 1 / 120, options);
+    expect(player.grounded).toBe(true);
+    expect(player.airJumpAvailable).toBe(true);
+    expect(player.wallJumpChain).toBe(false);
+  });
+
+  it.each([-1, 1] as const)('refills the air jump after repeated wall attachment on side %s', side => {
+    const { world, player } = tallRoom(side);
+    const options = { doubleJump: true };
+    for (let cycle = 0; cycle < 4; cycle++) {
+      expect(player.airJumpAvailable).toBe(true);
+      stepPlayer(world, player, { ...idle, jumpPressed: true }, 1 / 120, options);
+      expect(player.wallJumpChain).toBe(true);
+      stepPlayer(world, player, { ...idle, jumpPressed: true }, 1 / 120, options);
+      expect(player.airJumpAvailable).toBe(false);
+      for (let frame = 0; frame < 200 && !player.wall; frame++) {
+        stepPlayer(world, player, { ...idle, left: side < 0, right: side > 0 }, 1 / 120, options);
+      }
+      expect(player.wall).toBe(side);
+      expect(player.airJumpAvailable).toBe(true);
+    }
+  });
+
+  it.each([-1, 1] as const)('keeps optimized repeated wall and air jumps below same-tier climbing on side %s', side => {
+    const tank = createTank(); tank.upgrades.doubleJump = 1;
+    for (let level = 0; level <= 7; level++) {
+      tank.upgrades.jumpPower = level; tank.upgrades.climbSpeed = level;
+      const options = upgradeStats(tank);
+      const climbing = tallRoom(side);
+      const climbStart = climbing.player.y;
+      for (let frame = 0; frame < 120; frame++) stepPlayer(climbing.world, climbing.player, { ...idle, up: true }, 1 / 120, options);
+      const straightClimbSpeed = climbStart - climbing.player.y;
+      expect(straightClimbSpeed).toBeCloseTo(options.climbSpeed, 5);
+      let bestSpeed = 0;
+      // Early, midway and nearly apex air jumps, including delayed steering back.
+      for (const remainingUpwardFraction of [0.98, 0.75, 0.5, 0.25, 0.05, -0.1]) {
+        for (const returnFraction of [0, 0.7, 1.2]) {
+          const { world, player } = tallRoom(side);
+          const startY = player.y;
+          let elapsed = 0, cycleTime = 0, launchSpeed = 0, cycles = 0, usedAirJump = false;
+          while (cycles < 6 && elapsed < 30) {
+            const attached = player.wall !== 0;
+            const airJump = !attached && !usedAirJump && player.vy >= -launchSpeed * remainingUpwardFraction;
+            const returnDelay = returnFraction * launchSpeed / 900;
+            stepPlayer(world, player, { ...idle,
+              left: side < 0 && cycleTime >= returnDelay, right: side > 0 && cycleTime >= returnDelay,
+              jumpPressed: attached || airJump,
+            }, 1 / 120, options);
+            elapsed += 1 / 120; cycleTime += 1 / 120;
+            if (attached) { launchSpeed = -player.vy; cycleTime = 0; usedAirJump = false; }
+            if (airJump) usedAirJump = true;
+            if (!attached && player.wall) cycles++;
+          }
+          expect(cycles, `tier ${level}, air timing ${remainingUpwardFraction}, return ${returnFraction}`).toBe(6);
+          const speed = (startY - player.y) / elapsed;
+          expect(speed).toBeGreaterThan(0);
+          expect(speed, `tier ${level}, air timing ${remainingUpwardFraction}, return ${returnFraction}`).toBeLessThanOrEqual(straightClimbSpeed * 1.03);
+          bestSpeed = Math.max(bestSpeed, speed);
+        }
+      }
+      if (level >= 3) expect(bestSpeed).toBeGreaterThan(upgradeStats(createTank()).climbSpeed);
+    }
   });
 });
 
