@@ -19,9 +19,38 @@ refuse_existing() {
 refuse_existing /opt/waterhole-feedback
 refuse_existing /etc/waterhole-feedback
 refuse_existing /var/lib/waterhole-feedback
+
+refuse_existing_unit() {
+  local unit=$1 properties key value field
+  local -A details=()
+  properties=$(systemctl show -p LoadState -p ActiveState -p FragmentPath -p SourcePath -p DropInPaths -p Transient -- "$unit") || fail "Cannot inspect unit: $unit"
+  while IFS='=' read -r key value; do
+    case "$key" in
+      LoadState|ActiveState|FragmentPath|SourcePath|DropInPaths|Transient)
+        [[ ! -v details[$key] ]] || fail "Ambiguous unit inspection: $unit"
+        details[$key]=$value
+        ;;
+    esac
+  done <<< "$properties"
+  for field in LoadState ActiveState FragmentPath SourcePath DropInPaths Transient; do
+    [[ -v details[$field] ]] || fail "Incomplete unit inspection: $unit"
+  done
+  # systemd can synthesize an inactive slice without any installed unit file.
+  # Configured, active, transient, and loaded service units still require review.
+  if [[ ${details[ActiveState]} == inactive && ${details[Transient]} == no &&
+        -z ${details[FragmentPath]} && -z ${details[SourcePath]} && -z ${details[DropInPaths]} ]]; then
+    if [[ ${details[LoadState]} == not-found ||
+          ( $unit == *.slice && ${details[LoadState]} == loaded ) ]]; then
+      return
+    fi
+  fi
+  fail "Existing unit requires manual review: $unit"
+}
+# Unit availability check ends.
+
 for unit in waterhole.slice waterhole-feedback.service waterhole-tunnel.service; do
   refuse_existing "/etc/systemd/system/$unit"
-  [[ $(systemctl show -p LoadState --value "$unit") == not-found ]] || fail "Existing unit requires manual review: $unit"
+  refuse_existing_unit "$unit"
 done
 refuse_existing /etc/systemd/journald@waterhole.conf
 refuse_existing /etc/systemd/system/systemd-journald@waterhole.service.d
@@ -58,7 +87,7 @@ allowed_deploy = {
     'install-host.sh', 'waterhole.slice', 'waterhole-feedback.service',
     'waterhole-tunnel.service', 'journald-waterhole.conf', 'journald-waterhole-override.conf'
 }
-allowed_tests = {'abuse', 'config', 'deployment', 'png', 'protocol', 'server', 'store'}
+allowed_tests = {'abuse', 'config', 'deployment', 'png', 'preflight', 'protocol', 'server', 'store'}
 required = {'feedback-server/' + name for name in allowed_root}
 required |= {'feedback-server/deploy/' + name for name in allowed_deploy - {'install-host.sh'}}
 if (stage / 'source.tar').stat().st_size > 20 * 1024 * 1024:
