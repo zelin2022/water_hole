@@ -45,12 +45,12 @@ describe('tank and incremental sales', () => {
 });
 
 describe('equipment purchases', () => {
-  it('extends the two-cell terrain halo by 20% with each torso lamp purchase only', () => {
+  it('extends the four-cell terrain halo by 20% with each torso lamp purchase only', () => {
     const tank = createTank(); tank.credits = 1000;
-    expect(upgradeStats(tank).terrainRevealCells).toBe(2);
+    expect(upgradeStats(tank).terrainRevealCells).toBe(4);
     for (let level = 1; level <= 2; level++) {
       expect(buyUpgrade(tank, 'torsoLamp')).toBe(true);
-      expect(upgradeStats(tank).terrainRevealCells).toBeCloseTo(2 * 1.2 ** level, 10);
+      expect(upgradeStats(tank).terrainRevealCells).toBeCloseTo(4 * 1.2 ** level, 10);
     }
     const radius = upgradeStats(tank).terrainRevealCells;
     for (const id of ['headlampWidth', 'headlampDepth'] as const) {

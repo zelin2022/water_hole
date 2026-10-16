@@ -341,33 +341,36 @@ describe('tiny penetrating terrain halo', () => {
     };
   }
 
-  it.each([4, 12])('reveals two solid cells from the body edge with %s-pixel cells, falling off before the third', (cellSize) => {
-    expect(TERRAIN_REVEAL_CELLS).toBe(2);
+  it.each([4, 12])('reveals four solid cells from the body edge with %s-pixel cells, falling off before the fifth', (cellSize) => {
+    expect(TERRAIN_REVEAL_CELLS).toBe(4);
     const world = chamber(cellSize), state = createVision(world);
     updateVision(world, state, bodyInput(cellSize));
-    const first = world.index(10, 12), second = world.index(11, 12), third = world.index(12, 12);
-    expect(state.lamplight[first]).toBeCloseTo(0.6 * Math.sqrt(0.75));
-    expect(state.lamplight[second]).toBeCloseTo(0.3);
+    const first = world.index(10, 12), second = world.index(11, 12), fourth = world.index(13, 12), fifth = world.index(14, 12);
+    expect(state.lamplight[first]).toBeCloseTo(0.6 * Math.sqrt(0.875));
+    expect(state.lamplight[second]).toBeCloseTo(0.6 * Math.sqrt(0.625));
     expect(state.visible[first]).toBe(1);
     expect(state.visible[second]).toBe(1);
-    expect(state.lamplight[third]).toBe(0);
-    // The lower body edge, far from the torso point, has the same two-cell halo.
-    expect(state.lamplight[world.index(8, 16)]).toBeCloseTo(0.3);
-    expect(state.lamplight[world.index(8, 17)]).toBe(0);
+    expect(state.lamplight[fourth]).toBeCloseTo(0.6 * Math.sqrt(0.125));
+    expect(state.visible[fourth]).toBe(1);
+    expect(state.lamplight[fifth]).toBe(0);
+    // The lower body edge, far from the torso point, has the same four-cell halo.
+    expect(state.lamplight[world.index(8, 18)]).toBeCloseTo(0.6 * Math.sqrt(0.125));
+    expect(state.lamplight[world.index(8, 19)]).toBe(0);
   });
 
   it('extends the soft boundary by 20% per torso upgrade without a large penetrating light', () => {
     const world = chamber(), state = createVision(world), input = bodyInput();
-    const diagonal = world.index(11, 16), third = world.index(12, 12);
-    updateVision(world, state, { ...input, terrainRevealCells: 2 });
+    const diagonal = world.index(12, 18), fifth = world.index(14, 12), sixth = world.index(15, 12);
+    updateVision(world, state, { ...input, terrainRevealCells: 4 });
     expect(state.visible[diagonal]).toBe(0);
-    expect(state.visible[third]).toBe(0);
-    updateVision(world, state, { ...input, terrainRevealCells: 2.4 });
+    expect(state.visible[fifth]).toBe(0);
+    updateVision(world, state, { ...input, terrainRevealCells: 4.8 });
     expect(state.visible[diagonal]).toBe(1);
-    expect(state.visible[third]).toBe(0);
-    updateVision(world, state, { ...input, terrainRevealCells: 2.88 });
-    expect(state.visible[third]).toBe(1);
-    expect(state.visible[world.index(13, 12)]).toBe(0);
+    expect(state.visible[fifth]).toBe(1);
+    expect(state.visible[sixth]).toBe(0);
+    updateVision(world, state, { ...input, terrainRevealCells: 5.76 });
+    expect(state.visible[sixth]).toBe(1);
+    expect(state.visible[world.index(16, 12)]).toBe(0);
   });
 
   it('uses the torso point as a fallback and accepts zero to disable only the halo', () => {
@@ -376,7 +379,8 @@ describe('tiny penetrating terrain halo', () => {
       time: 0, torsoRadius: 0, headlampRange: 0 };
     updateVision(world, state, input);
     expect(state.visible[world.index(10, 12)]).toBe(1);
-    expect(state.visible[world.index(11, 12)]).toBe(0);
+    expect(state.visible[world.index(12, 12)]).toBe(1);
+    expect(state.visible[world.index(13, 12)]).toBe(0);
     updateVision(world, state, { ...input, terrainRevealCells: 0 });
     expect(state.visible[world.index(10, 12)]).toBe(0);
     // Disabling the halo retains normal first-face lighting and occlusion.
