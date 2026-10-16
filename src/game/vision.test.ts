@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { World } from './world';
 import {
-  computeDaylight, createVision, pingSonar, sonarOpacity, updateVision,
+  computeDaylight, createVision, pingSonar, sonarOpacity, sonarTravelDistance, updateVision,
+  pingSubsurfaceScanner, subsurfaceScannerOpacity,
   SONAR_COOLDOWN, SONAR_TRAVEL_TIME, SONAR_OUTLINE_LIFETIME,
 } from './vision';
 
@@ -265,34 +266,189 @@ describe('local lamps and exploration', () => {
   });
 });
 
-describe('temporary outward sonar', () => {
+describe('retained penetrating subsurface scanner', () => {
   it('enforces the cooldown and snapshots the ping origin', () => {
     const state = createVision(new World(10, 10));
     const origin = { x: 20, y: 20 };
-    expect(pingSonar(state, origin, 0, 200)).toBe(true);
+    expect(pingSubsurfaceScanner(state, origin, 0, 200)).toBe(true);
     origin.x = 100;
-    expect(state.sonar?.origin.x).toBe(20);
-    expect(pingSonar(state, origin, SONAR_COOLDOWN - 0.01, 200)).toBe(false);
-    expect(pingSonar(state, origin, SONAR_COOLDOWN, 200)).toBe(true);
+    expect(state.subsurfaceScan?.origin.x).toBe(20);
+    expect(pingSubsurfaceScanner(state, origin, SONAR_COOLDOWN - 0.01, 200)).toBe(false);
+    expect(pingSubsurfaceScanner(state, origin, SONAR_COOLDOWN, 200)).toBe(true);
   });
 
   it('reveals each segment when reached, with a fast attack and slower half-second fade', () => {
     const state = createVision(new World(10, 10));
-    pingSonar(state, { x: 0, y: 0 }, 0, 200);
+    pingSubsurfaceScanner(state, { x: 0, y: 0 }, 0, 200);
     const point = { x: 100, y: 0 };
     const arrival = SONAR_TRAVEL_TIME / 2;
-    expect(sonarOpacity(state, point, arrival - 0.01)).toBe(0);
-    expect(sonarOpacity(state, point, arrival + 0.025)).toBeCloseTo(1);
-    expect(sonarOpacity(state, point, arrival + 0.25)).toBeGreaterThan(0);
-    expect(sonarOpacity(state, point, arrival + 0.25)).toBeLessThan(1);
-    expect(sonarOpacity(state, point, arrival + SONAR_OUTLINE_LIFETIME)).toBe(0);
+    expect(subsurfaceScannerOpacity(state, point, arrival - 0.01)).toBe(0);
+    expect(subsurfaceScannerOpacity(state, point, arrival + 0.025)).toBeCloseTo(1);
+    expect(subsurfaceScannerOpacity(state, point, arrival + 0.25)).toBeGreaterThan(0);
+    expect(subsurfaceScannerOpacity(state, point, arrival + 0.25)).toBeLessThan(1);
+    expect(subsurfaceScannerOpacity(state, point, arrival + SONAR_OUTLINE_LIFETIME)).toBe(0);
   });
 
   it('reaches the captured viewport radius at two seconds and never exposes beyond it', () => {
     const state = createVision(new World(10, 10));
-    pingSonar(state, { x: 0, y: 0 }, 0, 200);
-    expect(sonarOpacity(state, { x: 200, y: 0 }, SONAR_TRAVEL_TIME + 0.025)).toBeCloseTo(1);
-    expect(sonarOpacity(state, { x: 201, y: 0 }, SONAR_TRAVEL_TIME + 0.1)).toBe(0);
-    expect(sonarOpacity(state, { x: 10, y: 0 }, -1)).toBe(0);
+    pingSubsurfaceScanner(state, { x: 0, y: 0 }, 0, 200);
+    expect(subsurfaceScannerOpacity(state, { x: 200, y: 0 }, SONAR_TRAVEL_TIME + 0.025)).toBeCloseTo(1);
+    expect(subsurfaceScannerOpacity(state, { x: 201, y: 0 }, SONAR_TRAVEL_TIME + 0.1)).toBe(0);
+    expect(subsurfaceScannerOpacity(state, { x: 10, y: 0 }, -1)).toBe(0);
+  });
+});
+
+describe('cave sonar navigating connected open space', () => {
+  function buriedTerrain(): World {
+    const world = new World(24, 24, 4);
+    for (let y = 1; y < world.height - 1; y++) {
+      for (let x = 1; x < world.width - 1; x++) world.setSolid(x, y, true);
+    }
+    return world;
+  }
+
+  it('does not discover the outline of a sealed water pocket through rock', () => {
+    const world = buriedTerrain();
+    for (let y = 4; y <= 8; y++) {
+      for (let x = 2; x <= 5; x++) world.setSolid(x, y, false);
+      for (let x = 9; x <= 12; x++) {
+        world.setSolid(x, y, false);
+        world.water[world.index(x, y)] = 1;
+      }
+    }
+    const state = createVision(world);
+    const origin = { x: 14, y: 26 };
+    const sealedEdge = { x: 36, y: 26 };
+    expect(pingSonar(world, state, origin, 0, 100)).toBe(true);
+    const radialArrival = Math.hypot(sealedEdge.x - origin.x, sealedEdge.y - origin.y) / 100 * SONAR_TRAVEL_TIME;
+    expect(sonarOpacity(world, state, sealedEdge, radialArrival + 0.025)).toBe(0);
+    expect(pingSubsurfaceScanner(state, origin, 0, 100)).toBe(true);
+    expect(subsurfaceScannerOpacity(state, sealedEdge, radialArrival + 0.025)).toBeCloseTo(1);
+    expect(state.explored.every((value) => value === 0)).toBe(true);
+  });
+
+  it('travels around a tunnel bend instead of using distance through rock', () => {
+    const world = buriedTerrain();
+    for (let x = 3; x <= 12; x++) world.setSolid(x, 5, false);
+    for (let y = 5; y <= 13; y++) world.setSolid(12, y, false);
+    const state = createVision(world);
+    expect(pingSonar(world, state, { x: 14, y: 22 }, 0, 100)).toBe(true);
+    const farEdge = { x: 50, y: 56 };
+    const tunnelArrival = (9 * 4 + 8 * 4 + 2) / 100 * SONAR_TRAVEL_TIME;
+    expect(sonarOpacity(world, state, farEdge, tunnelArrival - 0.01)).toBe(0);
+    expect(sonarOpacity(world, state, farEdge, tunnelArrival + 0.025)).toBeCloseTo(1);
+  });
+
+  it('does not pass a diagonal opening between touching solid corners', () => {
+    const world = buriedTerrain();
+    world.setSolid(3, 5, false);
+    world.setSolid(4, 6, false);
+    const state = createVision(world);
+    pingSonar(world, state, { x: 14, y: 22 }, 0, 100);
+    const sealedEdge = { x: 16, y: 26 };
+    const radialArrival = Math.hypot(2, 4) / 100 * SONAR_TRAVEL_TIME;
+    expect(sonarOpacity(world, state, sealedEdge, radialArrival + 0.025)).toBe(0);
+  });
+
+  it('reveals only the reachable side of a thin dividing wall', () => {
+    const world = buriedTerrain();
+    for (let y = 4; y <= 8; y++) {
+      for (const x of [3, 4, 5, 7, 8, 9]) world.setSolid(x, y, false);
+    }
+    const state = createVision(world);
+    pingSonar(world, state, { x: 22, y: 22 }, 0, 100);
+    expect(sonarOpacity(world, state, { x: 24, y: 22 }, 2 / 100 * SONAR_TRAVEL_TIME + 0.025)).toBeCloseTo(1);
+    expect(sonarOpacity(world, state, { x: 28, y: 22 }, 6 / 100 * SONAR_TRAVEL_TIME + 0.025)).toBe(0);
+  });
+
+  it('crosses water in connected tunnels without changing water or exploration', () => {
+    const world = buriedTerrain();
+    for (let x = 3; x <= 12; x++) {
+      world.setSolid(x, 5, false);
+      world.water[world.index(x, 5)] = 1;
+    }
+    const water = world.water.slice();
+    const state = createVision(world);
+    pingSonar(world, state, { x: 14, y: 22 }, 0, 100);
+    expect(sonarOpacity(world, state, { x: 52, y: 22 }, 38 / 100 * SONAR_TRAVEL_TIME + 0.025)).toBeCloseTo(1);
+    expect(world.water).toEqual(water);
+    expect(state.explored.every((value) => value === 0)).toBe(true);
+    expect(state.visible.every((value) => value === 0)).toBe(true);
+  });
+
+  it('updates a pulse route after digging opens or closes a connection', () => {
+    const world = buriedTerrain();
+    for (const x of [3, 4, 5, 6, 8, 9, 10]) world.setSolid(x, 5, false);
+    const state = createVision(world);
+    pingSonar(world, state, { x: 14, y: 22 }, 0, 100);
+    const edge = { x: 44, y: 22 };
+    const arrival = 30 / 100 * SONAR_TRAVEL_TIME;
+    expect(sonarOpacity(world, state, edge, arrival + 0.025)).toBe(0);
+    world.setSolid(7, 5, false);
+    expect(sonarOpacity(world, state, edge, arrival + 0.025)).toBeCloseTo(1);
+    world.setSolid(7, 5, true);
+    expect(sonarOpacity(world, state, edge, arrival + 0.025)).toBe(0);
+  });
+
+  it('caches the open-space search for repeated segment and wavefront queries', () => {
+    const world = undergroundRoom(30, 30);
+    const state = createVision(world);
+    pingSonar(world, state, { x: 22, y: 22 }, 0, 100);
+    const solidQueries = vi.spyOn(world, 'isSolid');
+    expect(sonarTravelDistance(world, state, { x: 50, y: 50 })).toBe(56);
+    expect(solidQueries.mock.calls.length).toBeGreaterThan(100);
+    solidQueries.mockClear();
+    expect(sonarTravelDistance(world, state, { x: 50, y: 50 })).toBe(56);
+    expect(solidQueries.mock.calls.length).toBeLessThan(10);
+    world.setSolid(10, 10, true);
+    solidQueries.mockClear();
+    expect(sonarTravelDistance(world, state, { x: 50, y: 50 })).toBe(56);
+    expect(solidQueries.mock.calls.length).toBeGreaterThan(100);
+    solidQueries.mockRestore();
+  });
+
+  it('keeps the cave and subsurface scanner cooldowns and pulse origins independent', () => {
+    const world = undergroundRoom();
+    const state = createVision(world);
+    const origin = { x: 22, y: 22 };
+    expect(pingSonar(world, state, origin, 0, 100)).toBe(true);
+    expect(pingSubsurfaceScanner(state, origin, 0, 100)).toBe(true);
+    origin.x = 30;
+    expect(state.sonar?.origin.x).toBe(22);
+    expect(state.subsurfaceScan?.origin.x).toBe(22);
+    expect(pingSonar(world, state, origin, SONAR_COOLDOWN - 0.01, 100)).toBe(false);
+    expect(pingSonar(world, state, origin, SONAR_COOLDOWN, 100)).toBe(true);
+    expect(state.subsurfaceScan?.startedAt).toBe(0);
+    expect(state.lastSubsurfaceScanAt).toBe(0);
+  });
+
+  it('keeps two-second travel, fast appearance, and half-second edge fading along a tunnel', () => {
+    const world = buriedTerrain();
+    for (let x = 3; x <= 12; x++) world.setSolid(x, 5, false);
+    const state = createVision(world);
+    pingSonar(world, state, { x: 14, y: 22 }, 0, 38);
+    const edge = { x: 52, y: 22 };
+    expect(sonarOpacity(world, state, edge, SONAR_TRAVEL_TIME - 0.01)).toBe(0);
+    expect(sonarOpacity(world, state, edge, SONAR_TRAVEL_TIME + 0.025)).toBeCloseTo(1);
+    expect(sonarOpacity(world, state, edge, SONAR_TRAVEL_TIME + 0.25)).toBeGreaterThan(0);
+    expect(sonarOpacity(world, state, edge, SONAR_TRAVEL_TIME + 0.25)).toBeLessThan(1);
+    expect(sonarOpacity(world, state, edge, SONAR_TRAVEL_TIME + SONAR_OUTLINE_LIFETIME)).toBe(0);
+    expect(sonarOpacity(world, state, { x: 51.5, y: 20 }, SONAR_TRAVEL_TIME + 0.025)).toBe(0);
+    expect(sonarOpacity(world, state, edge, -1)).toBe(0);
+  });
+
+  it('rejects blocked or invalid origins without consuming the cave sonar cooldown', () => {
+    const world = buriedTerrain();
+    world.setSolid(3, 5, false);
+    const state = createVision(world);
+    for (const position of [{ x: 10, y: 10 }, { x: -1, y: 22 }, { x: 200, y: 22 }, { x: NaN, y: 22 }]) {
+      expect(pingSonar(world, state, position, 0, 100)).toBe(false);
+    }
+    expect(state.sonar).toBeNull();
+    expect(state.lastSonarAt).toBe(-SONAR_COOLDOWN);
+    expect(pingSonar(world, state, { x: 14, y: 22 }, 0, 100)).toBe(true);
+    expect(sonarTravelDistance(world, state, { x: NaN, y: 22 })).toBe(Infinity);
+    expect(sonarTravelDistance(world, state, { x: -1, y: 22 })).toBe(Infinity);
+    expect(sonarOpacity(world, state, { x: 14, y: 22 }, 0.025)).toBe(0);
   });
 });

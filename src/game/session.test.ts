@@ -31,6 +31,13 @@ function advance(session: Session, seconds: number, input: Partial<GameInput> = 
 }
 
 describe('demo session', () => {
+  it('starts separate cave-sonar and reserved subsurface-scanner pulse clocks', () => {
+    const session = createSession();
+    expect(session).toMatchObject({ sonar: null, lastSonarAt: -15,
+      subsurfaceScan: null, lastSubsurfaceScanAt: -15 });
+    expect(session.tank.upgrades).toMatchObject({ sonar: 0, subsurfaceScanner: 0 });
+  });
+
   it('defaults to many small pockets and the selected mouse-aimed headlamp', () => {
     expect(createSession().options).toMatchObject({ waterDistribution: 'many-small', headlamp: 'mouse' });
   });

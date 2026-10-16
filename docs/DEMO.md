@@ -23,7 +23,9 @@ Build both alternatives for each comparison. Make them selectable before startin
 | Explored cave visibility | Explored cave outlines remain dimly visible outside current illumination. | Explored caves become dark; sonar is needed to reveal their outlines. |
 | Water pockets | Many small pockets create more separate discoveries. | Fewer large pockets provide more water per discovery. |
 
-Both vision alternatives use a small light around the character plus a headlamp. Solid terrain conceals water. Sonar is included in the experimental build for the dark-cave alternative. It traces the outline of dug/excavated cave space from near to far as its expanding ring passes. Availability during comparison playtests still needs tuning; the original upgrade proposal is a one-time sonar purchase.
+Both vision alternatives use a small light around the character plus a headlamp. Solid terrain conceals water. Cave sonar is a navigation tool: its wave travels through connected open space, follows tunnels around bends, and briefly traces adjacent wall outlines. Terrain blocks propagation, including diagonal corner gaps. Sealed cavities and water pockets remain hidden. It works on the current cave geometry without permanently exploring or illuminating it.
+
+Retain the original penetrating radial scan as the **Subsurface scanner**, a separate reserved item. Its pulse can trace sealed cavities, including water-pocket outlines, through terrain. Hide it from the shop and reject purchases until its design is finalized; no player keybinding is assigned. Save its pulse/cooldown separately from Cave sonar. Existing Cave sonar ownership carries over to the new navigation mechanic, and older saves receive an unowned, inactive scanner.
 
 The headlamp comparison is resolved: the lamp follows mouse aim and the visible head rotates with that aim. Continue/load preserves the cave-memory and pocket-distribution choices. Older saves retain their world and switch character-facing lamps to mouse aim. Keep a development-only full-visibility option for testing.
 
@@ -44,12 +46,12 @@ Bands use pocket centre rows below 120, 120–184, and 185 onward on the 256-row
 
 | Parameter | Starting value and behaviour |
 | --- | --- |
-| Wave travel | About 2 seconds from the character to beyond the viewing area |
+| Wave travel | About 2 seconds over the captured travel range; distance follows open tunnels |
 | Outline appearance | Fast, almost immediate, when the wave reaches each outline segment |
 | Outline lifetime | 0.5 seconds total per segment, including initial appearance and the slower fade |
 | Cooldown | 15 seconds |
 
-All timings remain tunable. Each outline segment starts its own appearance/fade when reached by the wave, so the reveal travels outward rather than flashing the whole cave at once. Outlines fade instead of remaining permanently mapped by sonar.
+All timings remain tunable. Each reachable outline segment starts its own appearance/fade when reached by the wave. Draw the Cave sonar wavefront only inside reachable open cells. Outlines fade instead of remaining permanently mapped by sonar. Recompute propagation when excavation changes connectivity. Remembered outlines require the open side of a wall to have been explored, so seeing a thin wall's near face cannot reveal an unseen cavity on its far side.
 
 ### Terrain responsive lighting
 
@@ -82,6 +84,7 @@ The following selection is approved for the provisional build and remains subjec
 | Water detector radius | Repeatable levels; requires detector v1 |
 | Water detector v1 | One purchase; points toward the closest water body within its radius, with no indicator when none is in range |
 | Digging while attached to a wall | One purchase; disabled before purchase |
+| Cave sonar | One purchase; temporarily traces connected tunnel walls for navigation |
 
 Start with roughly one or two purchased levels per repeatable track, then tune the level counts, prices, effects, and water distribution together. These are provisional bounds, not final caps. The shop must show the current stat, purchase effect, price, and affordability.
 
@@ -102,7 +105,7 @@ These proposals remain available for discussion without being added to the initi
 | Sonar cooldown | Repeatable upgrade that reduces cooldown; requires sonar |
 | Double jump | One-time ability purchase |
 | Water detector v2 | One-time purchase requiring v1; also indicates the water body's mass, with deeper colour for more water |
-| Underground sonar v0 | Proposed one-time purchase; an outward ring reveals the dug cave outline from near to far, initially on a 15-second cooldown |
+| Subsurface scanner | Reserved and hidden; preserves the original penetrating cavity-outline scan pending further design |
 
 ## Presentation and menus
 
@@ -129,7 +132,7 @@ Artifact placement, artifact signals, and artifact recovery are excluded from th
 
 Continue test-driven development: write a meaningful failing behaviour test, confirm the expected failure, implement the smallest change, then refactor with tests passing. Keep simulation and progression independent of rendering and Electron.
 
-Test grounded stepping in both directions, ascent/descent caps, headroom, swept-path collisions, and jumping/airborne exclusions alongside falling-only attachment, detachment suppression, the wall-dig purchase restriction, strike timing and damage, fixed digging distance, upgrades, detector behaviour, water conservation during transfer, save/load, comparison-mode restoration, and the delivery cutoff. Test generated sites deterministically across seeds and both distributions: accessible starter water, separated bodies, depth-based volume variation, comparable budgets, and enough water for the demo. Preserve legacy saved worlds when adding new options.
+Test grounded stepping in both directions, ascent/descent caps, headroom, swept-path collisions, and jumping/airborne exclusions alongside falling-only attachment, detachment suppression, the wall-dig purchase restriction, strike timing and damage, fixed digging distance, upgrades, detector behaviour, water conservation during transfer, save/load, comparison-mode restoration, and the delivery cutoff. Test generated sites deterministically across seeds and both distributions: accessible starter water, separated bodies, depth-based volume variation, comparable budgets, and enough water for the demo. Test sonar around bends, sealed pockets, both faces of thin walls, diagonal gaps, excavation changes, timing/fade and cooldown. Verify the retained scanner penetrates independently while its purchase stays hidden. Preserve legacy saved worlds and equipment when adding new options or items.
 
 Playtest both alternatives in each comparison, including their independent selection and save/load restoration. Check mouse-aimed lighting and visible head rotation, digging feel, readable darkness, discovery, movement, sound, menus, keybindings, and progression manually. Before finishing implementation changes, run `npm test` and `npm run build`, and playtest control/rendering changes in the browser or Electron.
 

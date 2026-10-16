@@ -95,9 +95,18 @@ export function deserializeSession(json: string): Session {
   assert(finite(state.lastSonarAt, -15, state.time), 'sonar cooldown');
   assert(state.sonar === null || (record(state.sonar) && point(state.sonar.origin, extentX, extentY)
     && finite(state.sonar.startedAt, 0, state.time) && finite(state.sonar.maxRadius, 1, 100000)), 'sonar pulse');
+  const subsurfaceScan = state.subsurfaceScan === undefined ? null : state.subsurfaceScan;
+  const lastSubsurfaceScanAt = state.lastSubsurfaceScanAt === undefined ? -15 : state.lastSubsurfaceScanAt;
+  assert(finite(lastSubsurfaceScanAt, -15, state.time), 'scanner cooldown');
+  assert(subsurfaceScan === null || (record(subsurfaceScan) && point(subsurfaceScan.origin, extentX, extentY)
+    && finite(subsurfaceScan.startedAt, 0, state.time) && finite(subsurfaceScan.maxRadius, 1, 100000)), 'scanner pulse');
   const tank = state.tank;
   assert(record(tank) && record(tank.upgrades) && finite(tank.water) && finite(tank.credits)
     && typeof tank.upgraded === 'boolean', 'tank');
+  const upgradeIds = new Set(UPGRADE_DEFINITIONS.map(definition => definition.id));
+  assert(Object.keys(tank.upgrades).every(id => upgradeIds.has(id as keyof Tank['upgrades'])), 'upgrade entries');
+  // Only the newly reserved scanner may be absent from earlier v1 equipment.
+  if (tank.upgrades.subsurfaceScanner === undefined) tank.upgrades.subsurfaceScanner = 0;
   assert(Object.keys(tank.upgrades).length === UPGRADE_DEFINITIONS.length, 'upgrade entries');
   for (const definition of UPGRADE_DEFINITIONS) {
     const level = tank.upgrades[definition.id];
@@ -130,7 +139,7 @@ export function deserializeSession(json: string): Session {
   // Existing active v1 runs may contain old floating obstacles. Migrate once;
   // completed runs retain their frozen terrain and new saves keep their debris.
   if (state.fallingDirt === undefined && !state.completed) fallingDirt = detachSmallDirt(world);
-  return { ...state, world, fallingDirt, devCreditAdjustment,
+  return { ...state, world, fallingDirt, devCreditAdjustment, subsurfaceScan, lastSubsurfaceScanAt,
     options: { ...state.options, stepHeightCells, waterDistribution, headlamp: 'mouse' },
     explored: Uint8Array.from(state.explored) } as Session;
 }

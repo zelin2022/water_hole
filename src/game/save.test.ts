@@ -34,6 +34,65 @@ function corrupt(change: (data: any) => void) {
 }
 
 describe('versioned local saves', () => {
+  it('preserves independent cave-sonar and subsurface-scanner pulse state', () => {
+    const session = stockedSession();
+    session.subsurfaceScan = { origin: { x: 180, y: 120 }, startedAt: 7, maxRadius: 600 };
+    session.lastSubsurfaceScanAt = 7;
+    session.tank.upgrades.subsurfaceScanner = 1;
+    const restored = deserializeSession(serializeSession(session));
+    expect(restored.sonar).toEqual(session.sonar);
+    expect(restored.lastSonarAt).toBe(8);
+    expect(restored.subsurfaceScan).toEqual(session.subsurfaceScan);
+    expect(restored.lastSubsurfaceScanAt).toBe(7);
+    expect(restored.tank.upgrades).toEqual(session.tank.upgrades);
+    expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(restored.initialWater, 5);
+  });
+
+  it('migrates earlier v1 saves without scanner metadata while preserving owned cave sonar and progress', () => {
+    const session = stockedSession();
+    expect(buyUpgrade(session.tank, 'sonar')).toBe(true);
+    const earlier = JSON.parse(serializeSession(session));
+    delete earlier.session.tank.upgrades.subsurfaceScanner;
+    delete earlier.session.subsurfaceScan;
+    delete earlier.session.lastSubsurfaceScanAt;
+    const restored = deserializeSession(JSON.stringify(earlier));
+    expect(restored.subsurfaceScan).toBeNull();
+    expect(restored.lastSubsurfaceScanAt).toBe(-15);
+    expect(restored.tank.upgrades).toEqual({ ...session.tank.upgrades, subsurfaceScanner: 0 });
+    expect(restored.tank.upgrades.sonar).toBe(1);
+    expect(restored.sonar).toEqual(session.sonar);
+    expect(restored.world.solid).toEqual(session.world.solid);
+    expect(restored.world.water).toEqual(session.world.water);
+    expect(restored.delivered).toBe(session.delivered);
+    expect(restored.tank.credits).toBe(session.tank.credits);
+    expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(restored.initialWater, 5);
+  });
+
+  it('rejects malformed scanner pulses, clocks and upgrade levels', () => {
+    for (const subsurfaceScan of [false, {}, { origin: { x: 0, y: 0 }, startedAt: -1, maxRadius: 50 },
+      { origin: { x: 1000000, y: 0 }, startedAt: 0, maxRadius: 50 },
+      { origin: { x: 0, y: 0 }, startedAt: 1, maxRadius: 50 },
+      { origin: { x: 0, y: 0 }, startedAt: 0, maxRadius: 0 }]) {
+      expect(() => deserializeSession(corrupt(data => data.session.subsurfaceScan = subsurfaceScan))).toThrow(/scanner pulse/);
+    }
+    for (const lastSubsurfaceScanAt of [null, '0', -16, 1]) {
+      expect(() => deserializeSession(corrupt(data => data.session.lastSubsurfaceScanAt = lastSubsurfaceScanAt))).toThrow(/scanner cooldown/);
+    }
+    for (const level of [null, -1, 2, 0.5, '1']) {
+      expect(() => deserializeSession(corrupt(data => data.session.tank.upgrades.subsurfaceScanner = level))).toThrow(/upgrade level/);
+    }
+  });
+
+  it('rejects unknown equipment entries and missing established equipment when migrating scanner metadata', () => {
+    expect(() => deserializeSession(corrupt(data => {
+      delete data.session.tank.upgrades.subsurfaceScanner;
+      data.session.tank.upgrades.unknownEquipment = 0;
+    }))).toThrow(/upgrade entries/);
+    expect(() => deserializeSession(corrupt(data => {
+      delete data.session.tank.upgrades.sonar;
+    }))).toThrow(/upgrade entries/);
+  });
+
   it.each(['many-small', 'fewer-large'] as const)('preserves the %s water distribution with the actual site and water ledger', waterDistribution => {
     const session = createSession({ seed: 42, caveMemory: 'sonar', waterDistribution });
     const restored = deserializeSession(serializeSession(session));

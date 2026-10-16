@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { World } from './world';
 import { totalWater } from './water';
-import { buyUpgrade, canBuyUpgrade, collectIntoTank, createTank, CREDIT_EPSILON, depositAtHopper, upgradeAvailability, upgradeStats, type UpgradeId } from './economy';
+import { buyUpgrade, canBuyUpgrade, collectIntoTank, createTank, CREDIT_EPSILON, depositAtHopper, UPGRADE_DEFINITIONS, upgradeAvailability, upgradeStats, type UpgradeId } from './economy';
 
 describe('tank and incremental sales', () => {
   it('starts empty with no equipment upgrades', () => {
@@ -45,6 +45,22 @@ describe('tank and incremental sales', () => {
 });
 
 describe('equipment purchases', () => {
+  it('retains the subsurface scanner as hidden equipment without allowing purchases', () => {
+    const tank = createTank(); tank.credits = 500;
+    const scanner = 'subsurfaceScanner' as UpgradeId;
+    expect(UPGRADE_DEFINITIONS.find(definition => definition.id === scanner)).toMatchObject({
+      name: 'Subsurface scanner', hidden: true,
+    });
+    expect(tank.upgrades[scanner]).toBe(0);
+    const balance = { water: tank.water, credits: tank.credits };
+    expect(upgradeAvailability(tank, scanner)).toBe('unavailable');
+    expect(canBuyUpgrade(tank, scanner)).toBe(false);
+    expect(buyUpgrade(tank, scanner)).toBe(false);
+    expect(tank.upgrades[scanner]).toBe(0);
+    expect(tank).toMatchObject(balance);
+    expect(upgradeAvailability(tank, 'sonar')).toBe('available');
+  });
+
   it('hides prerequisite-gated and fully installed upgrades regardless of funding', () => {
     const tank = createTank(); tank.credits = 500;
     expect(upgradeAvailability(tank, 'detectorRange')).toBe('unavailable');

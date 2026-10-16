@@ -64,7 +64,10 @@ const devPanel = DEV_TOOLS_ENABLED ? new DevPanel(el('panel'), {
 }) : null;
 function clearInput(): void { held.clear(); pressed.clear(); accumulated = 0; }
 function notice(message: string): void { el('notice').textContent = message; el('notice').classList.add('visible'); noticeUntil = performance.now() + 3200; }
-function syncSonar(): void { session.sonar = vision.sonar; session.lastSonarAt = vision.lastSonarAt; }
+function syncSonar(): void {
+  session.sonar = vision.sonar; session.lastSonarAt = vision.lastSonarAt;
+  session.subsurfaceScan = vision.subsurfaceScan; session.lastSubsurfaceScanAt = vision.lastSubsurfaceScanAt;
+}
 function saveRun(notify = true): boolean {
   if (!hasRun) return false;
   try { syncSonar(); localStorage.setItem(SAVE_KEY, serializeSession(session)); lastAutoSaveAt = session.time; if (notify) notice('Expedition saved.'); return true; }
@@ -77,6 +80,7 @@ function restore(next: Session): void {
   }
   session = next; hasRun = true; vision = createVision(session.world, session.explored);
   vision.sonar = session.sonar; vision.lastSonarAt = session.lastSonarAt; pointer.active = false;
+  vision.subsurfaceScan = session.subsurfaceScan; vision.lastSubsurfaceScanAt = session.lastSubsurfaceScanAt;
   const centre = playerCenter(session); aim = { x: centre.x + session.facing * 80, y: centre.y };
   lastVisionAt = -1; lastTerrainVersion = -1; lastAutoSaveAt = session.time;
   changeScreen(session.completed ? 'ended' : 'playing');
@@ -284,7 +288,7 @@ function tick(time: number): void {
     const input: GameInput = { left: down('left'), right: down('right'), up: down('up'), down: down('down'), jumpPressed: pressed.has('jump'), digging: down('dig'), aim, collecting: down('collect'), depositPressed: pressed.has('unload') };
     if (pressed.has('sonar')) {
       if (!session.tank.upgrades.sonar) notice('Install cave sonar at the water exchange.');
-      else if (pingSonar(vision, playerCenter(session), session.time, renderer.getSonarRadius(session))) { syncSonar(); audio.play('sonar'); }
+      else if (pingSonar(session.world, vision, playerCenter(session), session.time, renderer.getSonarRadius(session))) { syncSonar(); audio.play('sonar'); }
       else notice(`Sonar recharging: ${Math.ceil(SONAR_COOLDOWN - (session.time - vision.lastSonarAt))}s.`);
     }
     if (pressed.has('unload') && !nearHopper(session)) notice('Water can only be released at the hopper.');

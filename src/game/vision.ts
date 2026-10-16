@@ -15,6 +15,7 @@ export const MINIMUM_VISIBLE_LIGHT = 0.025;
 export const LAMP_AMBIENT_SUPPRESSION = 0.85;
 
 const daylightCache = new WeakMap<World, { version: number; field: Float32Array }>();
+const sonarDistanceCache = new WeakMap<SonarPulse, WeakMap<World, { version: number; field: Float32Array }>>();
 
 export interface SonarPulse { origin: Point; startedAt: number; maxRadius: number; }
 export interface VisionState {
@@ -26,6 +27,8 @@ export interface VisionState {
   daylight: Float32Array;
   sonar: SonarPulse | null;
   lastSonarAt: number;
+  subsurfaceScan: SonarPulse | null;
+  lastSubsurfaceScanAt: number;
 }
 
 export interface VisionInput {
@@ -48,6 +51,7 @@ export function createVision(world: World, explored?: Uint8Array): VisionState {
     light: new Float32Array(size), daylight: new Float32Array(size),
     moonlight: new Float32Array(size), lamplight: new Float32Array(size),
     sonar: null, lastSonarAt: -SONAR_COOLDOWN,
+    subsurfaceScan: null, lastSubsurfaceScanAt: -SONAR_COOLDOWN,
   };
 }
 
@@ -230,23 +234,121 @@ export function updateVision(world: World, state: VisionState, input: VisionInpu
   }
 }
 
-export function pingSonar(state: VisionState, position: Point, time: number, maxRadius: number): boolean {
+export function pingSonar(world: World, state: VisionState, position: Point, time: number, maxRadius: number): boolean {
   if (![position.x, position.y, time, maxRadius].every(Number.isFinite)
-    || maxRadius <= 0 || time - state.lastSonarAt < SONAR_COOLDOWN) return false;
+    || maxRadius <= 0 || time - state.lastSonarAt < SONAR_COOLDOWN
+    || world.isSolidAtPixel(position.x, position.y)) return false;
   state.sonar = { origin: { ...position }, startedAt: time, maxRadius };
   state.lastSonarAt = time;
   return true;
 }
 
-/** Called for cave outline segments by the renderer, never for resource data. */
-export function sonarOpacity(state: VisionState, point: Point, time: number): number {
-  const pulse = state.sonar;
-  if (!pulse || ![point.x, point.y, time].every(Number.isFinite)) return 0;
-  const distance = Math.hypot(point.x - pulse.origin.x, point.y - pulse.origin.y);
+/** The original penetrating pulse, reserved for the separate subsurface scanner. */
+export function pingSubsurfaceScanner(state: VisionState, position: Point, time: number, maxRadius: number): boolean {
+  if (![position.x, position.y, time, maxRadius].every(Number.isFinite)
+    || maxRadius <= 0 || time - state.lastSubsurfaceScanAt < SONAR_COOLDOWN) return false;
+  state.subsurfaceScan = { origin: { ...position }, startedAt: time, maxRadius };
+  state.lastSubsurfaceScanAt = time;
+  return true;
+}
+
+function pulseOpacity(pulse: SonarPulse, distance: number, time: number): number {
+  if (!Number.isFinite(distance) || !Number.isFinite(time)) return 0;
   if (distance > pulse.maxRadius) return 0;
   const arrival = pulse.startedAt + distance / pulse.maxRadius * SONAR_TRAVEL_TIME;
   const elapsed = time - arrival;
   if (elapsed < 0 || elapsed >= SONAR_OUTLINE_LIFETIME) return 0;
   if (elapsed < SONAR_ATTACK_TIME) return elapsed / SONAR_ATTACK_TIME;
   return 1 - (elapsed - SONAR_ATTACK_TIME) / (SONAR_OUTLINE_LIFETIME - SONAR_ATTACK_TIME);
+}
+
+/** Uses straight-line distance through terrain, preserving the original scan. */
+export function subsurfaceScannerOpacity(state: VisionState, point: Point, time: number): number {
+  const pulse = state.subsurfaceScan;
+  if (!pulse || ![point.x, point.y, time].every(Number.isFinite)) return 0;
+  return pulseOpacity(pulse, Math.hypot(point.x - pulse.origin.x, point.y - pulse.origin.y), time);
+}
+
+function sonarDistances(world: World, pulse: SonarPulse): Float32Array {
+  let worlds = sonarDistanceCache.get(pulse);
+  if (!worlds) {
+    worlds = new WeakMap();
+    sonarDistanceCache.set(pulse, worlds);
+  }
+  const cached = worlds.get(world);
+  if (cached?.version === world.terrainVersion) return cached.field;
+
+  const field = new Float32Array(world.solid.length).fill(Infinity);
+  const originX = Math.floor(pulse.origin.x / world.cellSize);
+  const originY = Math.floor(pulse.origin.y / world.cellSize);
+  if (!world.isSolid(originX, originY)) {
+    const queue = new Uint32Array(field.length);
+    const originIndex = world.index(originX, originY);
+    field[originIndex] = Math.hypot((originX + 0.5) * world.cellSize - pulse.origin.x,
+      (originY + 0.5) * world.cellSize - pulse.origin.y);
+    let head = 0;
+    let tail = 1;
+    queue[0] = originIndex;
+    while (head < tail) {
+      const index = queue[head++];
+      const x = index % world.width;
+      const y = Math.floor(index / world.width);
+      const distance = field[index] + world.cellSize;
+      // Keep one cell of margin so an edge just inside the range can be queried.
+      if (distance > pulse.maxRadius + world.cellSize) continue;
+      for (const [nx, ny] of [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]) {
+        if (world.isSolid(nx, ny)) continue;
+        const neighbour = world.index(nx, ny);
+        if (field[neighbour] !== Infinity) continue;
+        field[neighbour] = distance;
+        queue[tail++] = neighbour;
+      }
+    }
+  }
+  worlds.set(world, { version: world.terrainVersion, field });
+  return field;
+}
+
+/** Accept only the first solid/open face, never a solid cell's opposite face. */
+function boundaryOpenCell(world: World, point: Point): number {
+  const gx = point.x / world.cellSize;
+  const gy = point.y / world.cellSize;
+  const vertical = Math.abs(gx - Math.round(gx)) < 1e-7;
+  const horizontal = Math.abs(gy - Math.round(gy)) < 1e-7;
+  if (vertical === horizontal) return -1;
+  const ax = vertical ? Math.round(gx) - 1 : Math.floor(gx);
+  const ay = horizontal ? Math.round(gy) - 1 : Math.floor(gy);
+  const bx = vertical ? ax + 1 : ax;
+  const by = horizontal ? ay + 1 : ay;
+  const aSolid = world.isSolid(ax, ay);
+  const bSolid = world.isSolid(bx, by);
+  if (aSolid === bSolid) return -1;
+  return aSolid ? world.index(bx, by) : world.index(ax, ay);
+}
+
+/** Shortest open-grid route, also usable to draw a wavefront inside tunnels. */
+export function sonarTravelDistance(world: World, state: VisionState, point: Point): number {
+  const pulse = state.sonar;
+  if (!pulse || ![point.x, point.y].every(Number.isFinite)
+    || point.x < 0 || point.y < 0
+    || point.x >= world.width * world.cellSize || point.y >= world.height * world.cellSize) return Infinity;
+  const field = sonarDistances(world, pulse);
+  const boundary = boundaryOpenCell(world, point);
+  const x = Math.floor(point.x / world.cellSize);
+  const y = Math.floor(point.y / world.cellSize);
+  const index = boundary >= 0 ? boundary : world.isSolid(x, y) ? -1 : world.index(x, y);
+  if (index < 0) return Infinity;
+  const centerX = (index % world.width + 0.5) * world.cellSize;
+  const centerY = (Math.floor(index / world.width) + 0.5) * world.cellSize;
+  const distance = field[index] + Math.hypot(point.x - centerX, point.y - centerY);
+  return distance <= pulse.maxRadius ? distance : Infinity;
+}
+
+/** Reveal only cave boundary segments reached through the current open space. */
+export function sonarOpacity(world: World, state: VisionState, point: Point, time: number): number {
+  const pulse = state.sonar;
+  if (!pulse || ![point.x, point.y, time].every(Number.isFinite)
+    || time < pulse.startedAt || time >= pulse.startedAt + SONAR_TRAVEL_TIME + SONAR_OUTLINE_LIFETIME
+    || boundaryOpenCell(world, point) < 0) return 0;
+  return pulseOpacity(pulse, sonarTravelDistance(world, state, point), time);
 }

@@ -2,7 +2,7 @@ import { COLLECTION_RADIUS, DIG_WINDUP, playerCenter, type Session } from './gam
 import { strikeCenter } from './game/digging';
 import { upgradeStats } from './game/economy';
 import { findNearestWater } from './game/detector';
-import { SONAR_TRAVEL_TIME, sonarOpacity, type VisionState } from './game/vision';
+import { SONAR_TRAVEL_TIME, sonarOpacity, sonarTravelDistance, subsurfaceScannerOpacity, type VisionState } from './game/vision';
 import type { Point, World } from './game/world';
 import { caveOutlineOpacity, DARKNESS, lightTransmission } from './render-lighting';
 
@@ -276,8 +276,9 @@ export class Renderer {
           if (world.isSolid(x + dx, y + dy)) continue;
           const neighbor = world.index(x + dx, y + dy);
           const point = { x: (x + (ax + bx) / 2) * s, y: (y + (ay + by) / 2) * s };
-          const sonar = sonarOpacity(vision, point, session.time);
-          const remembered = session.options.caveMemory === 'remembered' && Boolean(vision.explored[i] || vision.explored[neighbor]);
+          const sonar = Math.max(sonarOpacity(world, vision, point, session.time), subsurfaceScannerOpacity(vision, point, session.time));
+          // Knowing a near rock face must not reveal a sealed cavity on its far side.
+          const remembered = session.options.caveMemory === 'remembered' && Boolean(vision.explored[neighbor]);
           const opacity = caveOutlineOpacity(remembered, sonar);
           const bucket = sonar > 0 ? Math.max(1, Math.ceil(opacity / 0.75 * 8)) : opacity > 0 ? 0 : -1;
           if (bucket < 0) continue;
@@ -292,8 +293,24 @@ export class Renderer {
     if (vision.sonar) {
       const elapsed = session.time - vision.sonar.startedAt;
       if (elapsed >= 0 && elapsed <= SONAR_TRAVEL_TIME) {
+        const distance = elapsed / SONAR_TRAVEL_TIME * vision.sonar.maxRadius;
+        const front = new Path2D();
+        for (let y = minY; y <= maxY; y++) {
+          for (let x = minX; x <= maxX; x++) {
+            if (world.isSolid(x, y)) continue;
+            const travel = sonarTravelDistance(world, vision, { x: (x + 0.5) * s, y: (y + 0.5) * s });
+            if (travel <= distance && travel > distance - s * 2) front.rect(x * s, y * s, s, s);
+          }
+        }
+        ctx.fillStyle = '#91c1ba33'; ctx.fill(front);
+      }
+    }
+    // The dormant scanner retains the original penetrating radial wave.
+    if (vision.subsurfaceScan) {
+      const elapsed = session.time - vision.subsurfaceScan.startedAt;
+      if (elapsed >= 0 && elapsed <= SONAR_TRAVEL_TIME) {
         ctx.strokeStyle = '#91c1ba33'; ctx.lineWidth = 0.8; ctx.beginPath();
-        ctx.arc(vision.sonar.origin.x, vision.sonar.origin.y, elapsed / SONAR_TRAVEL_TIME * vision.sonar.maxRadius, 0, Math.PI * 2); ctx.stroke();
+        ctx.arc(vision.subsurfaceScan.origin.x, vision.subsurfaceScan.origin.y, elapsed / SONAR_TRAVEL_TIME * vision.subsurfaceScan.maxRadius, 0, Math.PI * 2); ctx.stroke();
       }
     }
   }

@@ -57,6 +57,8 @@ export interface Session {
   explored: Uint8Array;
   sonar: SonarSave | null;
   lastSonarAt: number;
+  subsurfaceScan: SonarSave | null;
+  lastSubsurfaceScanAt: number;
   fallingDirt: FallingDirt[];
 }
 
@@ -79,6 +81,7 @@ export function createSession(options: SessionOptions = {}): Session {
     unloading: false, facing: 1,
     explored: new Uint8Array(site.world.solid.length),
     sonar: null, lastSonarAt: -15,
+    subsurfaceScan: null, lastSubsurfaceScanAt: -15,
     fallingDirt: detachSmallDirt(site.world),
   };
 }

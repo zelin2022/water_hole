@@ -1,7 +1,7 @@
 import type { Point, World } from './world';
 import { collectWater } from './water';
 
-export type UpgradeId = 'digRadius' | 'digDamage' | 'climbSpeed' | 'capacity' | 'detector' | 'detectorRange' | 'wallDig' | 'sonar';
+export type UpgradeId = 'digRadius' | 'digDamage' | 'climbSpeed' | 'capacity' | 'detector' | 'detectorRange' | 'wallDig' | 'sonar' | 'subsurfaceScanner';
 export type UpgradeAvailability = 'unavailable' | 'unaffordable' | 'available';
 export interface UpgradeDefinition {
   id: UpgradeId;
@@ -9,6 +9,8 @@ export interface UpgradeDefinition {
   description: string;
   costs: number[];
   requires?: UpgradeId;
+  /** Reserved equipment is retained in saves but not offered for purchase. */
+  hidden?: boolean;
 }
 export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   { id: 'digRadius', name: 'Wider pick', description: 'Increase the radius of each impact.', costs: [40, 100] },
@@ -18,7 +20,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   { id: 'detector', name: 'Water detector', description: 'Point toward nearby water within 160 units.', costs: [25] },
   { id: 'detectorRange', name: 'Detector amplifier', description: 'Increase the water detection radius.', costs: [45, 95], requires: 'detector' },
   { id: 'wallDig', name: 'Wall work harness', description: 'Use the pick while attached to a wall.', costs: [40] },
-  { id: 'sonar', name: 'Cave sonar', description: 'Send a pulse that briefly traces cave outlines.', costs: [30] },
+  { id: 'sonar', name: 'Cave sonar', description: 'Trace connected tunnel outlines; terrain blocks the pulse.', costs: [30] },
+  { id: 'subsurfaceScanner', name: 'Subsurface scanner', description: 'Penetrate terrain to trace sealed cavities and water pockets.', costs: [30], hidden: true },
 ];
 
 export interface Tank {
@@ -50,7 +53,7 @@ export function upgradeStats(tank: Tank) {
 /** Visibility is determined by progression before the current balance is considered. */
 export function upgradeAvailability(tank: Tank, id: UpgradeId): UpgradeAvailability {
   const definition = UPGRADE_DEFINITIONS.find(item => item.id === id);
-  if (!definition || (definition.requires && !tank.upgrades[definition.requires])) return 'unavailable';
+  if (!definition || definition.hidden || (definition.requires && !tank.upgrades[definition.requires])) return 'unavailable';
   const cost = definition.costs[tank.upgrades[id]];
   if (cost === undefined) return 'unavailable';
   return Number.isFinite(tank.credits) && tank.credits + CREDIT_EPSILON >= cost ? 'available' : 'unaffordable';

@@ -34,6 +34,8 @@ Grounded walking automatically steps up and follows down small terrain changes, 
 
 Clinging needs hand/torso contact backed by connected wall terrain. Uneven dug faces remain climbable: held grips follow shallow recesses and ledges, while foot-level bumps and isolated cells do not catch the character. The attached pose grips the wall with both hands before the harness upgrade, then visibly wields the pickaxe after installation. Underground darkness conceals the environment. Pale moonlight enters exposed openings and weakens in narrow shafts; warm head/torso lights reveal the nearby surroundings. Player lamps dim in strong ambient light and recover in darkness, including when aimed from the surface into a dark tunnel. Remembered mode keeps a faint explored outline, while sonar mode needs light or a ping to reveal it.
 
+Cave sonar helps with wayfinding: its wave follows connected open tunnels around bends and briefly traces their walls. Terrain blocks the pulse, keeping sealed caves and water pockets hidden. Reveals appear quickly and fade over half a second; the cooldown remains 15 seconds. The earlier penetrating scan is preserved as the **Subsurface scanner**, reserved and hidden from the shop with no player control assigned. Existing Cave sonar purchases retain access to the new navigation pulse.
+
 Detached dirt islands of up to three cells fall away and disappear on landing. The fragments do not block movement or displace water. Larger islands and stone stay intact.
 
 ## Default controls
@@ -48,7 +50,7 @@ Detached dirt islands of up to three cells fall away and disappear on landing. T
 | Hold E | Collect nearby exposed water |
 | F near the hopper | Start/stop gradual unloading |
 | B near the exchange | Open the equipment shop |
-| Q after installing sonar | Send a cave-outline pulse |
+| Q after installing cave sonar | Trace connected tunnel outlines |
 | Escape | Pause / return from menus |
 
 Climbing is unlimited and water is harmless. The shop offers pick radius, pick damage, climb speed, tank capacity, water detection/range, wall digging, and sonar. Numerical balance is provisional. Settings include display presets/fullscreen, music/SFX volume, and keybindings. Escape remains reserved for pause/menu navigation.
