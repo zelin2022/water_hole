@@ -33,7 +33,6 @@ export interface VisionInput {
   headPosition?: Point;
   aim: Point;
   facing: -1 | 1;
-  headlamp: 'character' | 'mouse';
   time: number;
   debugVision?: boolean;
   torsoRadius?: number;
@@ -187,14 +186,12 @@ export function updateVision(world: World, state: VisionState, input: VisionInpu
   const headPosition = input.headPosition ?? input.position;
   let directionX = input.facing;
   let directionY = 0;
-  if (input.headlamp === 'mouse') {
-    const dx = input.aim.x - headPosition.x;
-    const dy = input.aim.y - headPosition.y;
-    const length = Math.hypot(dx, dy);
-    if (length > 0) {
-      directionX = dx / length;
-      directionY = dy / length;
-    }
+  const aimX = input.aim.x - headPosition.x;
+  const aimY = input.aim.y - headPosition.y;
+  const aimDistance = Math.hypot(aimX, aimY);
+  if (aimDistance > 0) {
+    directionX = aimX / aimDistance;
+    directionY = aimY / aimDistance;
   }
   const coneLimit = Math.cos(halfAngle);
   const minX = Math.max(1, Math.floor(Math.min(input.position.x - torsoRadius, headPosition.x - beamRange) / world.cellSize));

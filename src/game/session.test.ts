@@ -31,6 +31,25 @@ function advance(session: Session, seconds: number, input: Partial<GameInput> = 
 }
 
 describe('demo session', () => {
+  it('defaults to many small pockets and the selected mouse-aimed headlamp', () => {
+    expect(createSession().options).toMatchObject({ waterDistribution: 'many-small', headlamp: 'mouse' });
+  });
+
+  it('creates distinct reproducible pocket distributions and starts both with an accounted water ledger', () => {
+    const many = createSession({ seed: 42, waterDistribution: 'many-small' });
+    const fewer = createSession({ seed: 42, waterDistribution: 'fewer-large' });
+    expect(many.options.waterDistribution).toBe('many-small');
+    expect(fewer.options.waterDistribution).toBe('fewer-large');
+    expect(many.world.water).not.toEqual(fewer.world.water);
+    for (const session of [many, fewer]) {
+      const repeated = createSession({ seed: 42, waterDistribution: session.options.waterDistribution });
+      expect(repeated.world.solid).toEqual(session.world.solid);
+      expect(repeated.world.water).toEqual(session.world.water);
+      expect(totalWater(session.world) + session.tank.water + session.delivered).toBe(session.initialWater);
+      expect(session.initialWater).toBeGreaterThan(DEMO_DELIVERY_LIMIT);
+    }
+  });
+
   it('defaults to two-cell walking steps and preserves the one-cell comparison', () => {
     expect(createSession().options.stepHeightCells).toBe(2);
     expect(createSession({ stepHeightCells: 1 }).options.stepHeightCells).toBe(1);

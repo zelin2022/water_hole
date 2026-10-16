@@ -21,11 +21,24 @@ Build both alternatives for each comparison. Make them selectable before startin
 | Comparison | Alternative A | Alternative B |
 | --- | --- | --- |
 | Explored cave visibility | Explored cave outlines remain dimly visible outside current illumination. | Explored caves become dark; sonar is needed to reveal their outlines. |
-| Headlamp direction | The lamp follows character-facing direction. | The lamp follows mouse aim, and the visible head rotates with that aim. |
+| Water pockets | Many small pockets create more separate discoveries. | Fewer large pockets provide more water per discovery. |
 
 Both vision alternatives use a small light around the character plus a headlamp. Solid terrain conceals water. Sonar is included in the experimental build for the dark-cave alternative. It traces the outline of dug/excavated cave space from near to far as its expanding ring passes. Availability during comparison playtests still needs tuning; the original upgrade proposal is a one-time sonar purchase.
 
-The character-facing headlamp follows the character's last horizontal movement direction, independently of mouse aim. Head rotation limits for the mouse-facing variant and the exact location of comparison controls can be settled during the prototype. Continue/load must preserve a run's selected comparison modes. Keep a development-only full-visibility option for testing.
+The headlamp comparison is resolved: the lamp follows mouse aim and the visible head rotates with that aim. Continue/load preserves the cave-memory and pocket-distribution choices. Older saves retain their world and switch character-facing lamps to mouse aim. Keep a development-only full-visibility option for testing.
+
+### Depth-based water pockets
+
+Both distributions use a small guaranteed starter pocket beside the shaft. Near the surface, small pockets are common; larger pockets become increasingly common deeper down. Keep size variation within each depth band. Give both presets the same water budget at each depth so discovery frequency and water per discovery can be compared without adding extra income to one preset. Keep the shallow supply below the demo cutoff to encourage deeper exploration. These are provisional pacing values, not final balance.
+
+| Depth band | Many small: pocket count | Fewer large: pocket count | Water in either preset |
+| --- | --- | --- | --- |
+| Shallow, including the shared 45-unit starter | 8 | 4 | 240 |
+| Middle | 10 | 5 | 600 |
+| Deep | 10 | 7 | 1,100 |
+| Total | 28 | 16 | 1,940 |
+
+Bands use pocket centre rows below 120, 120–184, and 185 onward on the 256-row map. Seeded variation changes individual volumes and positions while preserving each band's budget. The next shallow pocket is near the starter in both presets. The new layouts apply to new expeditions; loading an earlier save keeps its existing pockets.
 
 ### Sonar timing
 
@@ -116,14 +129,14 @@ Artifact placement, artifact signals, and artifact recovery are excluded from th
 
 Continue test-driven development: write a meaningful failing behaviour test, confirm the expected failure, implement the smallest change, then refactor with tests passing. Keep simulation and progression independent of rendering and Electron.
 
-Test grounded stepping in both directions, ascent/descent caps, headroom, swept-path collisions, and jumping/airborne exclusions alongside falling-only attachment, detachment suppression, the wall-dig purchase restriction, strike timing and damage, fixed digging distance, upgrades, detector behaviour, water conservation during transfer, save/load, comparison-mode restoration, and the delivery cutoff. Test generated sites deterministically against the selected progression requirements.
+Test grounded stepping in both directions, ascent/descent caps, headroom, swept-path collisions, and jumping/airborne exclusions alongside falling-only attachment, detachment suppression, the wall-dig purchase restriction, strike timing and damage, fixed digging distance, upgrades, detector behaviour, water conservation during transfer, save/load, comparison-mode restoration, and the delivery cutoff. Test generated sites deterministically across seeds and both distributions: accessible starter water, separated bodies, depth-based volume variation, comparable budgets, and enough water for the demo. Preserve legacy saved worlds when adding new options.
 
-Playtest both alternatives in each comparison, including the visible head rotation for mouse aim. Check digging feel, readable darkness, discovery, movement, sound, menus, keybindings, and progression manually. Before finishing implementation changes, run `npm test` and `npm run build`, and playtest control/rendering changes in the browser or Electron.
+Playtest both alternatives in each comparison, including their independent selection and save/load restoration. Check mouse-aimed lighting and visible head rotation, digging feel, readable darkness, discovery, movement, sound, menus, keybindings, and progression manually. Before finishing implementation changes, run `npm test` and `npm run build`, and playtest control/rendering changes in the browser or Electron.
 
 ## Provisional build tuning
 
 The first implementation uses a 400-unit cumulative delivery cutoff, 0.48 seconds between pickaxe swings with a 0.12-second wind-up, and 25 water units per second of hopper transfer. Earth durability is 1 and stone durability is 3. All are starting values for playtesting.
 
-Tune the core timings and delivery limit in `src/game/session.ts`, upgrade effects/prices in `src/game/economy.ts`, material durability/reach in `src/game/digging.ts`, wall grip/contour tolerance and walking-step height in `src/game/player.ts`, and lighting/sonar in `src/game/vision.ts`. Held grips currently bridge up to 8 world pixels; walking steps default to two terrain cells; ambient lamp suppression is 0.85. New Game exposes the vision/headlamp choices; builds with developer tools enabled also expose full visibility and the backtick panel's live step-height comparison. `npm run build:release` and the `package:*:release` commands use `.env.release` to disable those tools. The current presentation and original synthesized audio are a first pass toward the art brief.
+Tune the core timings and delivery limit in `src/game/session.ts`, water-pocket budgets and sizes in `src/game/generation.ts`, upgrade effects/prices in `src/game/economy.ts`, material durability/reach in `src/game/digging.ts`, wall grip/contour tolerance and walking-step height in `src/game/player.ts`, and lighting/sonar in `src/game/vision.ts`. Held grips currently bridge up to 8 world pixels; walking steps default to two terrain cells; ambient lamp suppression is 0.85. New Game exposes cave-memory and water-distribution choices; builds with developer tools enabled also expose full visibility and the backtick panel's live step-height comparison. `npm run build:release` and the `package:*:release` commands use `.env.release` to disable those tools. The current presentation and original synthesized audio are a first pass toward the art brief.
 
 Standalone Windows packaging is available. Native macOS packaging/QA, final balance and art refinement, and the [Steam release preparation](STEAM_DEMO_RELEASE.md) remain before the public demo release.

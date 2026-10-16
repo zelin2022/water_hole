@@ -375,9 +375,10 @@ export class Renderer {
     }
     ctx.restore();
     // Mirror independently, then tilt: facing left does not turn the helmet upside down.
-    const mouseAngle = Math.atan2(aim.y - (y + p.height / 2), aim.x - cx);
-    const hf = session.options.headlamp === 'mouse' ? Math.cos(mouseAngle) >= 0 ? 1 : -1 : session.facing;
-    const tilt = session.options.headlamp === 'mouse' ? Math.atan2(aim.y - (y + p.height / 2), Math.abs(aim.x - cx)) : 0;
+    const aimX = aim.x - cx;
+    const aimY = aim.y - (y + 6);
+    const hf = aimX === 0 && aimY === 0 ? session.facing : aimX >= 0 ? 1 : -1;
+    const tilt = Math.atan2(aimY, Math.abs(aimX));
     ctx.save(); ctx.translate(cx, y + 6); ctx.scale(hf, 1); ctx.rotate(tilt);
     ctx.fillStyle = '#d7b77b'; ctx.beginPath(); ctx.ellipse(0, 0, 6.4, 5.9, 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#f0d29a'; ctx.beginPath(); ctx.ellipse(-0.5, -2.2, 5.8, 3.3, 0, Math.PI, Math.PI * 2); ctx.fill();

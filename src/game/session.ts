@@ -3,7 +3,7 @@ import { buyUpgrade, collectIntoTank, createTank, depositAtHopper, upgradeStats,
 import type { Point, World } from './world';
 import { stepWater, totalWater } from './water';
 import { damageStrike, DIG_REACH_PADDING } from './digging';
-import { generateSite } from './generation';
+import { DEFAULT_WATER_DISTRIBUTION, generateSite, type WaterDistribution } from './generation';
 import { detachSmallDirt, stepFallingDirt, type FallingDirt } from './dirt';
 
 export const DIG_RADIUS = 12;
@@ -27,7 +27,8 @@ export interface GameInput extends PlayerInput {
 export interface SessionOptions {
   seed?: number;
   caveMemory?: 'remembered' | 'sonar';
-  headlamp?: 'character' | 'mouse';
+  headlamp?: 'mouse';
+  waterDistribution?: WaterDistribution;
   debugVision?: boolean;
   stepHeightCells?: 1 | 2;
 }
@@ -61,7 +62,8 @@ export interface Session {
 
 export function createSession(options: SessionOptions = {}): Session {
   const seed = (options.seed ?? 14321) >>> 0;
-  const site = generateSite(seed);
+  const waterDistribution = options.waterDistribution ?? DEFAULT_WATER_DISTRIBUTION;
+  const site = generateSite(seed, waterDistribution);
   return {
     world: site.world,
     player: createPlayer(site.spawn.x, site.spawn.y),
@@ -69,7 +71,7 @@ export function createSession(options: SessionOptions = {}): Session {
     hopper: site.hopper,
     surfaceY: site.surfaceY,
     seed,
-    options: { seed, caveMemory: options.caveMemory ?? 'remembered', headlamp: options.headlamp ?? 'character',
+    options: { seed, caveMemory: options.caveMemory ?? 'remembered', headlamp: 'mouse', waterDistribution,
       debugVision: options.debugVision ?? false, stepHeightCells: options.stepHeightCells ?? DEFAULT_STEP_HEIGHT_CELLS },
     delivered: 0, devCreditAdjustment: 0, time: 0, completed: false,
     initialWater: totalWater(site.world),

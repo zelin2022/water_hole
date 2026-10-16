@@ -75,6 +75,10 @@ export function deserializeSession(json: string): Session {
     && typeof state.options.debugVision === 'boolean', 'comparison options');
   const stepHeightCells = state.options.stepHeightCells === undefined ? DEFAULT_STEP_HEIGHT_CELLS : state.options.stepHeightCells;
   assert(stepHeightCells === 1 || stepHeightCells === 2, 'comparison options');
+  // Earlier v1 runs used the larger-pocket layout. Keep their stored world;
+  // only normalize the retired headlamp comparison and missing preset metadata.
+  const waterDistribution = state.options.waterDistribution === undefined ? 'fewer-large' : state.options.waterDistribution;
+  assert(waterDistribution === 'many-small' || waterDistribution === 'fewer-large', 'comparison options');
   assert(finite(state.surfaceY, 0, extentY) && point(state.hopper, extentX, extentY), 'surface or machine');
   assert(finite(state.time) && finite(state.initialWater) && finite(state.delivered, 0, DEMO_DELIVERY_LIMIT), 'progress ledger');
   const devCreditAdjustment = state.devCreditAdjustment === undefined ? 0 : state.devCreditAdjustment;
@@ -126,6 +130,7 @@ export function deserializeSession(json: string): Session {
   // Existing active v1 runs may contain old floating obstacles. Migrate once;
   // completed runs retain their frozen terrain and new saves keep their debris.
   if (state.fallingDirt === undefined && !state.completed) fallingDirt = detachSmallDirt(world);
-  return { ...state, world, fallingDirt, devCreditAdjustment, options: { ...state.options, stepHeightCells },
+  return { ...state, world, fallingDirt, devCreditAdjustment,
+    options: { ...state.options, stepHeightCells, waterDistribution, headlamp: 'mouse' },
     explored: Uint8Array.from(state.explored) } as Session;
 }

@@ -34,6 +34,42 @@ function corrupt(change: (data: any) => void) {
 }
 
 describe('versioned local saves', () => {
+  it.each(['many-small', 'fewer-large'] as const)('preserves the %s water distribution with the actual site and water ledger', waterDistribution => {
+    const session = createSession({ seed: 42, caveMemory: 'sonar', waterDistribution });
+    const restored = deserializeSession(serializeSession(session));
+    expect(restored.options.waterDistribution).toBe(waterDistribution);
+    expect(restored.world.solid).toEqual(session.world.solid);
+    expect(restored.world.water).toEqual(session.world.water);
+    expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(restored.initialWater, 5);
+  });
+
+  it('migrates earlier v1 comparison choices while preserving their serialized world and progress', () => {
+    const session = stockedSession();
+    const earlier = JSON.parse(serializeSession(session));
+    delete earlier.session.options.waterDistribution;
+    earlier.session.options.headlamp = 'character';
+    const restored = deserializeSession(JSON.stringify(earlier));
+    expect(restored.options.waterDistribution).toBe('fewer-large');
+    expect(restored.options.headlamp).toBe('mouse');
+    expect(restored.world.solid).toEqual(session.world.solid);
+    expect(restored.world.material).toEqual(session.world.material);
+    expect(restored.world.damage).toEqual(session.world.damage);
+    expect(restored.world.water).toEqual(session.world.water);
+    expect(restored.delivered).toBe(session.delivered);
+    expect(restored.tank).toEqual(session.tank);
+    expect(restored.explored).toEqual(session.explored);
+    expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(restored.initialWater, 5);
+  });
+
+  it('rejects invalid water distribution and headlamp options', () => {
+    for (const waterDistribution of [null, 'unknown', '', 1, ['many-small']]) {
+      expect(() => deserializeSession(corrupt(data => data.session.options.waterDistribution = waterDistribution))).toThrow(/comparison options/);
+    }
+    for (const headlamp of [null, 'unknown', '', 1]) {
+      expect(() => deserializeSession(corrupt(data => data.session.options.headlamp = headlamp))).toThrow(/comparison options/);
+    }
+  });
+
   it('preserves the walking step comparison and gives earlier v1 saves the two-cell default', () => {
     const session = createSession({ stepHeightCells: 1 });
     expect(deserializeSession(serializeSession(session)).options.stepHeightCells).toBe(1);

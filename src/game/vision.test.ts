@@ -95,7 +95,7 @@ describe('local lamps and exploration', () => {
     const state = createVision(world);
     const input = {
       position: { x: 82, y: 82 }, aim: { x: 82, y: 120 }, facing: 1 as const,
-      headlamp: 'mouse' as const, time: 0,
+      time: 0,
     };
     updateVision(world, state, { ...input, torsoRadius: 0, headlampRange: 0 });
     const unlit = state.light.slice();
@@ -114,7 +114,7 @@ describe('local lamps and exploration', () => {
     const state = createVision(world);
     const input = {
       position: { x: 50, y: 50 }, aim: { x: 100, y: 50 }, facing: 1 as const,
-      headlamp: 'mouse' as const, time: 0,
+      time: 0,
       torsoRadius: lamp === 'torso' ? 55 : 0,
       headlampRange: lamp === 'headlamp' ? 180 : 0,
     };
@@ -138,7 +138,7 @@ describe('local lamps and exploration', () => {
     const state = createVision(world);
     const input = {
       position: { x: 202, y: 34 }, aim: { x: 202, y: 390 }, facing: 1 as const,
-      headlamp: 'mouse' as const, time: 0, torsoRadius: 0, headlampRange: 400,
+      time: 0, torsoRadius: 0, headlampRange: 400,
     };
     const indexes = [12, 25, 50, 85].map((y) => world.index(50, y));
     updateVision(world, state, input);
@@ -169,7 +169,7 @@ describe('local lamps and exploration', () => {
     const state = createVision(world);
     updateVision(world, state, {
       position: { x: 202, y: 34 }, aim: { x: 202, y: 390 }, facing: 1,
-      headlamp: 'mouse', time: 0, torsoRadius: 0, headlampRange: 400,
+      time: 0, torsoRadius: 0, headlampRange: 400,
     });
     expect(state.moonlight[world.index(50, 8)]).toBe(1);
     expect(state.moonlight[world.index(50, 85)]).toBeLessThan(0.02);
@@ -183,26 +183,29 @@ describe('local lamps and exploration', () => {
     const state = createVision(world);
     updateVision(world, state, {
       position: { x: 42, y: 42 }, headPosition: { x: 42, y: 34 },
-      aim: { x: 100, y: 34 }, facing: 1, headlamp: 'mouse', time: 0,
+      aim: { x: 100, y: 34 }, facing: 1, time: 0,
       torsoRadius: 0, headlampRange: 80, headlampHalfAngle: 0.1,
     });
     expect(state.visible[world.index(16, 8)]).toBe(1);
     expect(state.visible[world.index(16, 10)]).toBe(0);
   });
 
-  it('compares character-facing and mouse-facing beams independently of torso light', () => {
+  it('always follows mouse aim independently of character facing and torso light', () => {
     const world = undergroundRoom();
     const state = createVision(world);
     const input = {
       position: { x: 200, y: 100 }, aim: { x: 0, y: 100 }, facing: 1 as const,
-      headlamp: 'character' as const, time: 0, torsoRadius: 16, headlampRange: 120,
+      time: 0, torsoRadius: 16, headlampRange: 120,
     };
     updateVision(world, state, input);
-    expect(state.visible[world.index(70, 25)]).toBe(1);
-    expect(state.visible[world.index(29, 25)]).toBe(0);
-    updateVision(world, state, { ...input, headlamp: 'mouse', time: 1 });
     expect(state.visible[world.index(70, 25)]).toBe(0);
     expect(state.visible[world.index(29, 25)]).toBe(1);
+    updateVision(world, state, { ...input, facing: -1, time: 1 });
+    expect(state.visible[world.index(70, 25)]).toBe(0);
+    expect(state.visible[world.index(29, 25)]).toBe(1);
+    updateVision(world, state, { ...input, aim: { x: 350, y: 100 }, time: 2 });
+    expect(state.visible[world.index(70, 25)]).toBe(1);
+    expect(state.visible[world.index(29, 25)]).toBe(0);
   });
 
   it('blocks lamp visibility behind rock while showing its first surface', () => {
@@ -212,7 +215,7 @@ describe('local lamps and exploration', () => {
     const state = createVision(world);
     updateVision(world, state, {
       position: { x: 200, y: 100 }, aim: { x: 350, y: 100 }, facing: 1,
-      headlamp: 'mouse', time: 0,
+      time: 0,
     });
     expect(state.visible[world.index(60, 25)]).toBe(1);
     expect(state.lamplight[world.index(60, 25)]).toBeGreaterThan(0);
@@ -229,7 +232,7 @@ describe('local lamps and exploration', () => {
     const state = createVision(world);
     updateVision(world, state, {
       position: { x: 38, y: 38 }, aim: { x: 60, y: 60 }, facing: 1,
-      headlamp: 'mouse', time: 0,
+      time: 0,
     });
     expect(state.visible[world.index(10, 10)]).toBe(0);
   });
@@ -240,11 +243,11 @@ describe('local lamps and exploration', () => {
     const state = createVision(world, exploration);
     expect(state.explored).toBe(exploration);
     const input = { position: { x: 200, y: 100 }, aim: { x: 350, y: 100 },
-      facing: 1 as const, headlamp: 'character' as const, time: 0 };
+      facing: 1 as const, time: 0 };
     updateVision(world, state, input);
     const index = world.index(75, 25);
     expect(state.visible[index]).toBe(1);
-    updateVision(world, state, { ...input, facing: -1, time: 1 });
+    updateVision(world, state, { ...input, aim: { x: 0, y: 100 }, time: 1 });
     expect(state.visible[index]).toBe(0);
     expect(exploration[index]).toBe(1);
   });
@@ -254,7 +257,7 @@ describe('local lamps and exploration', () => {
     const state = createVision(world);
     updateVision(world, state, {
       position: { x: 200, y: 100 }, aim: { x: 350, y: 100 }, facing: 1,
-      headlamp: 'mouse', time: 0, debugVision: true,
+      time: 0, debugVision: true,
     });
     expect(state.visible[world.index(4, 4)]).toBe(1);
     expect(state.light[world.index(4, 4)]).toBe(1);

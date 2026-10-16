@@ -24,7 +24,9 @@ Open the local URL Vite prints. Run `npm run desktop:dev` in a second terminal t
 
 ## Playtest options
 
-New Game offers independent comparisons for dim remembered cave outlines versus sonar-dependent darkness, and character-facing versus mouse-directed headlamps. Mouse aim visibly rotates the worker's head. The seed reproduces the same finite site; choices are retained by save/load. Provisional builds also offer a full-visibility checkbox for testing.
+New Game offers independent comparisons for dim remembered cave outlines versus sonar-dependent darkness, and many small versus fewer large water pockets. Both pocket distributions share the same water budget at each depth: small pockets are common near the surface, with larger pockets increasingly common deeper down. The seed and selected distribution reproduce the finite site; choices are retained by save/load. Provisional builds also offer a full-visibility checkbox for testing.
+
+The headlamp always follows mouse aim, and the worker's head visibly rotates with it. Existing saves keep their original terrain and water; older character-facing lamps switch to mouse aim.
 
 The underground starter shaft is beside the exchange. Airborne wall contact attaches only while falling. Hold S to descend after attaching, then work from the shaft floor to reach the first reservoir. Digging while attached is disabled until the work-harness upgrade is purchased.
 

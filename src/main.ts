@@ -8,6 +8,7 @@ import { AudioEngine } from './audio';
 import { Renderer } from './render';
 import { DevPanel } from './dev-panel';
 import { DEFAULT_STEP_HEIGHT_CELLS } from './game/player';
+import type { WaterDistribution } from './game/generation';
 
 declare global {
   interface Window { waterHoleDesktop?: { setDisplay(options: { fullscreen: boolean; width: number; height: number }): Promise<void>; quit(): void } }
@@ -104,10 +105,11 @@ function renderPanel(): void {
   switch (screen) {
     case 'home': el('panel').innerHTML = `${heading('A SMALL INDUSTRIAL EXPEDITION', 'Useful work.<br>Deeper ground.', 'Find water beneath the surface. Bring it back. Build the equipment to go further.')}
       <div class="menu-stack">${hasRun && !session.completed ? button('resume', 'Resume expedition', true) : ''}${button('new', 'New game', !hasRun || session.completed)}${button('load', 'Continue saved game', false, !saved)}${button('settings', 'Settings')}${window.waterHoleDesktop ? button('quit', 'Quit') : ''}</div><p class="small-note">A finite site. A pickaxe. A water exchange.</p>`; break;
-    case 'new': el('panel').innerHTML = `${heading('NEW EXPEDITION', 'Choose your site', 'The visibility comparisons are independent. Your choices stay with this save.')}
+    case 'new': el('panel').innerHTML = `${heading('NEW EXPEDITION', 'Choose your site', 'Compare water discovery and cave visibility independently. Your choices stay with this save.')}
       <form id="new-form"><label class="setting-row">Site seed<input id="site-seed" type="number" min="0" max="4294967295" step="1" value="${crypto.getRandomValues(new Uint32Array(1))[0]}"></label>
       <label class="setting-row">Cave memory<select id="cave-memory"><option value="remembered">Dim remembered outlines</option><option value="sonar">Dark caves / sonar outlines</option></select></label>
-      <label class="setting-row">Headlamp direction<select id="headlamp"><option value="character">Character facing</option><option value="mouse">Mouse aim + head rotation</option></select></label>
+      <label class="setting-row">Water pockets<select id="water-distribution"><option value="many-small">Many small pockets</option><option value="fewer-large">Fewer large pockets</option></select></label>
+      <p class="small-note">Both sites have the same water supply at each depth. Larger pockets become more common deeper down.</p>
       ${DEV_TOOLS_ENABLED ? '<label class="setting-row">Full visibility for testing<input id="debug-vision" type="checkbox"></label>' : ''}
       <div class="panel-actions"><button type="submit" class="primary-button">Begin expedition</button>${button('back-home', 'Back')}</div></form><p class="small-note">A new expedition replaces the single saved game after confirmation.</p>`; break;
     case 'confirm': el('panel').innerHTML = `${heading('START OVER', 'Replace this expedition?', 'Starting a new game replaces your current expedition and saved game.')}<div class="panel-actions">${button('confirm-new', 'Start new expedition', true)}${button('cancel-new', 'Keep current expedition')}</div>`; break;
@@ -173,7 +175,7 @@ el('panel').addEventListener('submit', event => {
   event.preventDefault(); if (screen !== 'new') return;
   const seed = Number(el<HTMLInputElement>('site-seed').value);
   if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) { notice('Choose a whole-number seed between 0 and 4294967295.'); return; }
-  pendingNew = { seed, caveMemory: el<HTMLSelectElement>('cave-memory').value as 'remembered' | 'sonar', headlamp: el<HTMLSelectElement>('headlamp').value as 'character' | 'mouse', debugVision: DEV_TOOLS_ENABLED && !!document.querySelector<HTMLInputElement>('#debug-vision')?.checked };
+  pendingNew = { seed, caveMemory: el<HTMLSelectElement>('cave-memory').value as 'remembered' | 'sonar', waterDistribution: el<HTMLSelectElement>('water-distribution').value as WaterDistribution, debugVision: DEV_TOOLS_ENABLED && !!document.querySelector<HTMLInputElement>('#debug-vision')?.checked };
   if (hasRun || read(SAVE_KEY)) changeScreen('confirm'); else beginNew();
 });
 el('panel').addEventListener('click', event => {
@@ -271,7 +273,7 @@ function updateHUD(): void {
   el('field-label').textContent = player.wall ? 'WALL ATTACHED' : `DEPTH ${Math.max(0, Math.floor((player.y - session.surfaceY) / 4))} m`;
   el('field-hint').textContent = session.unloading ? 'Unloading into the hopper. Move away or press unload again to stop.' : player.wall && !tank.upgrades.wallDig ? `${keyLabel(settings.bindings.up)} / ${keyLabel(settings.bindings.down)} climb up / down. Jump or move away to detach. A work harness unlocks wall digging.` : tank.water >= tank.capacity - 0.01 ? 'Tank full. Return to the water exchange.' : nearby ? 'Water earns credits here. Buy equipment to improve your next trip.' : 'Hold to strike terrain. Collect exposed water into your tank.';
   const cooldown = Math.max(0, SONAR_COOLDOWN - (session.time - vision.lastSonarAt));
-  el('location').textContent = `SITE ${session.seed} / ${session.options.caveMemory === 'remembered' ? 'CAVE MEMORY' : 'SONAR EXPLORATION'} / ${session.options.headlamp.toUpperCase()} LAMP${tank.upgrades.sonar ? ` / SONAR ${cooldown > 0 ? `${Math.ceil(cooldown)}s` : 'READY'}` : ''}`;
+  el('location').textContent = `SITE ${session.seed} / ${session.options.caveMemory === 'remembered' ? 'CAVE MEMORY' : 'SONAR EXPLORATION'} / ${session.options.waterDistribution === 'many-small' ? 'MANY SMALL POCKETS' : 'FEWER LARGE POCKETS'}${tank.upgrades.sonar ? ` / SONAR ${cooldown > 0 ? `${Math.ceil(cooldown)}s` : 'READY'}` : ''}`;
   el('field-hint').hidden = !hasRun || screen === 'ended';
 }
 function tick(time: number): void {
@@ -294,7 +296,7 @@ function tick(time: number): void {
     if (session.completed) { audio.play('end'); saveRun(false); changeScreen('ended'); }
   }
   if (session.time - lastVisionAt > 0.075 || lastTerrainVersion !== session.world.terrainVersion || lastVisionAt < 0) {
-    updateVision(session.world, vision, { position: playerCenter(session), headPosition: { x: session.player.x + session.player.width / 2, y: session.player.y + 6 }, aim, facing: session.facing, headlamp: session.options.headlamp, time: session.time, debugVision: DEV_TOOLS_ENABLED && session.options.debugVision });
+    updateVision(session.world, vision, { position: playerCenter(session), headPosition: { x: session.player.x + session.player.width / 2, y: session.player.y + 6 }, aim, facing: session.facing, time: session.time, debugVision: DEV_TOOLS_ENABLED && session.options.debugVision });
     lastVisionAt = session.time; lastTerrainVersion = session.world.terrainVersion;
   }
   renderer.render(session, aim, screen === 'playing' && down('collect'), vision);
