@@ -1,4 +1,5 @@
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell } = require('electron');
+const { readFileSync } = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
@@ -9,6 +10,20 @@ const entryURL = dev ? 'http://127.0.0.1:5173/' : pathToFileURL(entryFile).href;
 const sizes = new Set(['1024x720', '1280x800', '1600x900', '1920x1080']);
 let mainWindow = null;
 let displayQueue = Promise.resolve();
+
+function safeExternalURL(value) {
+  if (typeof value !== 'string' || value.trim() !== value || /[\\\u0000-\u0020\u007f]/.test(value)) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password && !url.port && !url.hash ? url.href : null;
+  } catch { return null; }
+}
+
+let externalLinks = new Set();
+try {
+  const links = JSON.parse(readFileSync(path.join(__dirname, '../dist/release-links.json'), 'utf8'));
+  if (Array.isArray(links)) externalLinks = new Set(links.map(safeExternalURL).filter(Boolean));
+} catch { /* An absent or invalid manifest disables external links. */ }
 
 function trustedSender(event) {
   return mainWindow && event.sender === mainWindow.webContents
@@ -58,11 +73,18 @@ ipcMain.handle('water-hole:set-display', async (event, options) => {
 ipcMain.on('water-hole:quit', (event) => {
   if (trustedSender(event)) app.quit();
 });
+ipcMain.handle('water-hole:open-external', async (event, requestedURL) => {
+  if (!trustedSender(event)) throw new Error('External links require the game window.');
+  const url = safeExternalURL(requestedURL);
+  if (!url || !externalLinks.has(url)) throw new Error('This link is not configured for this build.');
+  await shell.openExternal(url);
+});
 
 function createWindow() {
   const available = screen.getPrimaryDisplay().workAreaSize;
   const window = new BrowserWindow({
     title: 'Water Hole Demo',
+    icon: path.join(__dirname, '../dist/app-icon.png'),
     width: Math.min(1280, available.width),
     height: Math.min(800, available.height),
     minWidth: Math.min(900, available.width),

@@ -8,10 +8,11 @@ const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 
-async function desktop({ platform = 'win32', packaged = true, argv = [] } = {}) {
+async function desktop({ platform = 'win32', packaged = true, argv = [], links = [] } = {}) {
   const handlers = new Map();
   let window;
   let quit = false;
+  const opened = [];
   class FakeWindow extends EventEmitter {
     constructor(options) {
       super(); window = this; this.options = options; this.fullscreen = false;
@@ -45,6 +46,7 @@ async function desktop({ platform = 'win32', packaged = true, argv = [] } = {}) 
     quit: () => { quit = true; }, setName: name => { app.name = name; } };
   const electron = {
     app, BrowserWindow: FakeWindow,
+    shell: { openExternal: async url => { opened.push(url); } },
     ipcMain: { handle: (channel, fn) => handlers.set(channel, fn), on: (channel, fn) => handlers.set(channel, fn) },
     screen: {
       getDisplayMatching: () => ({ workAreaSize: { width: 1100, height: 760 } }),
@@ -52,14 +54,17 @@ async function desktop({ platform = 'win32', packaged = true, argv = [] } = {}) 
     },
   };
   vm.runInNewContext(fs.readFileSync(path.join(root, 'electron/main.cjs'), 'utf8'), {
-    require: name => name === 'electron' ? electron : require(name),
-    __dirname: path.join(root, 'electron'), process: { argv, platform }, console, setTimeout, clearTimeout,
+    require: name => name === 'electron' ? electron : name === 'node:fs'
+      ? { readFileSync: file => String(file).endsWith('release-links.json') ? JSON.stringify(links) : fs.readFileSync(file) }
+      : require(name),
+    __dirname: path.join(root, 'electron'), process: { argv, platform }, console, setTimeout, clearTimeout, URL,
   });
   await new Promise(resolve => setImmediate(resolve));
   return {
     window, app,
     display: handlers.get('water-hole:set-display'),
     requestQuit: handlers.get('water-hole:quit'),
+    openExternal: handlers.get('water-hole:open-external'), opened,
     event: { sender: window.webContents, senderFrame: window.webContents.mainFrame },
     hasQuit: () => quit,
   };
@@ -121,6 +126,7 @@ test('a packaged app uses local content even with --dev and keeps renderer isola
   const game = await desktop({ packaged: true, argv: ['--dev'] });
   assert.equal(game.window.url, pathToFileURL(path.join(root, 'dist/index.html')).href);
   assert.equal(game.app.name, 'Water Hole');
+  assert.equal(game.window.options.icon, path.join(root, 'dist/app-icon.png'));
   const preferences = game.window.options.webPreferences;
   assert.equal(preferences.nodeIntegration, false);
   assert.equal(preferences.contextIsolation, true);
@@ -129,7 +135,31 @@ test('a packaged app uses local content even with --dev and keeps renderer isola
   assert.equal(game.window.openHandler().action, 'deny');
 });
 
-test('preload exposes only bounded display and quit methods, without raw Electron APIs', async () => {
+test('external links require the trusted game frame and an exact configured HTTPS destination', async () => {
+  const feedback = 'https://github.com/zelin2022/water_hole/issues';
+  const game = await desktop({ links: [feedback, 'file:///C:/test', 'javascript:alert(1)', 'https://user:secret@example.com', 'https://example.com:8443', 'https://example.com/#fragment'] });
+  for (const url of [null, {}, 'https://example.com/', `${feedback}/new`, `${feedback}#fragment`,
+    'file:///C:/test', 'javascript:alert(1)', 'https://user:secret@example.com', 'https://example.com:8443', 'https://example.com/#fragment']) {
+    await assert.rejects(() => game.openExternal(game.event, url));
+  }
+  for (const event of [{ sender: {}, senderFrame: {} }, { sender: game.window.webContents, senderFrame: {} }]) {
+    await assert.rejects(() => game.openExternal(event, feedback));
+  }
+  assert.equal(game.opened.length, 0);
+  await game.openExternal(game.event, feedback);
+  assert.deepEqual(game.opened, [feedback]);
+  game.window.url = 'https://example.com/';
+  await assert.rejects(() => game.openExternal(game.event, feedback));
+  assert.deepEqual(game.opened, [feedback]);
+});
+
+test('an unconfigured build cannot open external links', async () => {
+  const game = await desktop();
+  await assert.rejects(() => game.openExternal(game.event, 'https://github.com/zelin2022/water_hole/issues'));
+  assert.equal(game.opened.length, 0);
+});
+
+test('preload exposes only bounded display, external link, and quit methods, without raw Electron APIs', async () => {
   let exposed;
   const calls = [];
   vm.runInNewContext(fs.readFileSync(path.join(root, 'electron/preload.cjs'), 'utf8'), {
@@ -138,10 +168,11 @@ test('preload exposes only bounded display and quit methods, without raw Electro
       ipcRenderer: { invoke: async (...args) => { calls.push(args); }, send: (...args) => { calls.push(args); } },
     }),
   });
-  assert.deepEqual(Object.keys(exposed).sort(), ['quit', 'setDisplay']);
+  assert.deepEqual(Object.keys(exposed).sort(), ['openExternal', 'quit', 'setDisplay']);
   await exposed.setDisplay({ ...preset, extra: 'must not cross the bridge' });
+  await exposed.openExternal('https://github.com/zelin2022/water_hole/issues');
   exposed.quit();
   assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
-    ['water-hole:set-display', preset], ['water-hole:quit'],
+    ['water-hole:set-display', preset], ['water-hole:open-external', 'https://github.com/zelin2022/water_hole/issues'], ['water-hole:quit'],
   ]);
 });

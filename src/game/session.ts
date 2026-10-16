@@ -14,7 +14,8 @@ export const COLLECTION_RADIUS = 28;
 export const HOPPER_RANGE = 96;
 /** Starter rate retained for callers; actual unloading uses the installed tank. */
 export const UNLOAD_RATE = BASE_UNLOAD_RATE;
-export const DEMO_DELIVERY_LIMIT = 400;
+export const DEMO_DELIVERY_LIMIT = 600;
+export const LEGACY_DEMO_DELIVERY_LIMIT = 400;
 
 export interface GameInput extends PlayerInput {
   digging: boolean;
@@ -44,6 +45,8 @@ export interface Session {
   options: Required<SessionOptions>;
   surfaceY: number;
   delivered: number;
+  /** Retain each expedition's ending wall when release balancing changes. */
+  deliveryLimit: number;
   /** Signed credit-only changes made by provisional development controls. */
   devCreditAdjustment: number;
   time: number;
@@ -76,7 +79,7 @@ export function createSession(options: SessionOptions = {}): Session {
     seed,
     options: { seed, caveMemory: 'sonar', headlamp: 'mouse', waterDistribution,
       debugVision: options.debugVision ?? false, stepHeightCells: DEFAULT_STEP_HEIGHT_CELLS },
-    delivered: 0, devCreditAdjustment: 0, time: 0, completed: false,
+    delivered: 0, deliveryLimit: DEMO_DELIVERY_LIMIT, devCreditAdjustment: 0, time: 0, completed: false,
     initialWater: totalWater(site.world),
     digCooldown: 0, strikeTime: -1, lastStrike: null,
     unloading: false, facing: 1,
@@ -140,11 +143,11 @@ export function stepSession(session: Session, input: GameInput, dt: number): voi
   else if (input.depositPressed) session.unloading = !session.unloading;
   if (session.unloading) {
     session.delivered += depositAtHopper(session.tank, center, session.hopper, HOPPER_RANGE,
-      Math.min(dt * upgradeStats(session.tank).unloadRate, DEMO_DELIVERY_LIMIT - session.delivered));
+      Math.min(dt * upgradeStats(session.tank).unloadRate, session.deliveryLimit - session.delivered));
     if (session.tank.water <= 1e-8) session.unloading = false;
   }
-  if (session.delivered >= DEMO_DELIVERY_LIMIT - 1e-8) {
-    session.delivered = DEMO_DELIVERY_LIMIT;
+  if (session.delivered >= session.deliveryLimit - 1e-8) {
+    session.delivered = session.deliveryLimit;
     session.completed = true;
     session.unloading = false;
     return;

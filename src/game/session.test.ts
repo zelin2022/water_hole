@@ -50,6 +50,43 @@ function fullTankAtLevel(level: number): Session {
 }
 
 describe('demo session', () => {
+  it('gives new expeditions a 600-water window to use the completed tank track', () => {
+    const session = fullTankAtLevel(9);
+    expect(session.deliveryLimit).toBe(600);
+    session.delivered = 280;
+    session.tank.credits = 10;
+    session.initialWater += session.delivered;
+    advanceExact(session, 1.6, 1 / 120, { depositPressed: true });
+    expect(session.delivered).toBeCloseTo(480, 6);
+    expect(session.tank.water).toBeCloseTo(0, 6);
+    expect(session.completed).toBe(false);
+    expect(session.tank.credits).toBeCloseTo(210, 6);
+    session.tank.water = 200;
+    session.initialWater += 200;
+    advanceExact(session, 1.6, 1 / 120, { depositPressed: true });
+    expect(session.delivered).toBe(600);
+    expect(session.tank.water).toBeCloseTo(80, 6);
+    expect(session.tank.credits).toBeCloseTo(330, 6);
+    expect(session.completed).toBe(true);
+    expect(totalWater(session.world) + session.tank.water + session.delivered).toBeCloseTo(session.initialWater, 5);
+    const snapshot = JSON.stringify(session);
+    stepSession(session, { ...idle, collecting: true, purchase: 'capacity', depositPressed: true }, 1);
+    expect(JSON.stringify(session)).toBe(snapshot);
+  });
+
+  it('uses a legacy expedition\'s own 400-water cutoff rather than the new default', () => {
+    const session = fullTankAtLevel(9);
+    session.deliveryLimit = 400;
+    session.delivered = 399.9;
+    session.initialWater += session.delivered;
+    stepSession(session, { ...idle, depositPressed: true }, 0.05);
+    expect(session.delivered).toBe(400);
+    expect(session.tank.water).toBeCloseTo(199.9, 6);
+    expect(session.tank.credits).toBeCloseTo(0.1, 6);
+    expect(session.completed).toBe(true);
+    expect(totalWater(session.world) + session.tank.water + session.delivered).toBeCloseTo(session.initialWater, 5);
+  });
+
   it('starts separate cave-sonar and reserved subsurface-scanner pulse clocks', () => {
     const session = createSession();
     expect(session).toMatchObject({ sonar: null, lastSonarAt: -15,

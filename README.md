@@ -2,7 +2,7 @@
 
 A finite 2D excavation game built with TypeScript, Canvas, Vite, and Electron. Break layered terrain with deliberate pickaxe strikes, collect exposed water, climb back to the exchange, and improve your equipment. New expeditions reach **2000 metres** on the depth display.
 
-The **provisional demo** implements the agreed systems for playtesting and balance. Artifact searching belongs to the full game. The demo ends at a cumulative delivery limit with a thank-you screen; that limit is not presented as a mission.
+The **demo release candidate** implements the agreed systems for playtesting and balance. Artifact searching belongs to the full game. New expeditions end at 600 cumulative water delivered with a thank-you screen; earlier saves retain their 400 limit. That limit is not presented as a mission. Public release still needs a feedback destination and native package checks; see [the local release checklist](docs/DEMO_RELEASE.md).
 
 ## Run
 
@@ -14,7 +14,7 @@ npm test
 npm start
 ```
 
-`npm start` builds and opens the desktop game. The first desktop launch downloads Electron if necessary. For browser development:
+`npm start` builds and opens the desktop game. `npm ci` installs the Electron runtime along with development dependencies. For browser development:
 
 ```sh
 npm run dev
@@ -63,7 +63,7 @@ Detached earth or sand islands of up to three cells fall away and disappear on l
 
 Climbing is unlimited and water is harmless. The shop offers mining, jumping, climbing, tank capacity, water detection/range, lamps, wall digging, and sonar. Mining has seven radius purchases (12 → 76 pixels), three damage purchases (1 → 6), and three speed purchases (0.48 → 0.16 seconds per swing). Stone takes 6, 3, 2, then 1 impact across the damage tiers. The full mining set costs 285 credits, with shorter wind-ups at higher speed so strikes remain discrete.
 
-Jump power and climbing assist each offer **seven purchases**, costing 175 credits per complete track. Ground jump launch speed rises from approximately 159 to 1080 world pixels per second; climbing rises from 75 to 680. Gentler upward gravity preserves the starting jump height while slowing the initial ascent; falling retains its normal gravity. Purchased jump tiers use the stronger launch speeds and standard upward gravity. The **35-credit air jump** adds one extra jump before landing or gripping a wall. Wall grips recharge it, allowing repeated wall jump → air jump → reattach sequences. Their launch speed is tuned separately so optimized repeated ascent stays at or below climbing assist of the same upgrade tier. Mining, both mobility tracks, and air jump total 670 credits, so the unchanged demo cutoff supports different equipment choices across runs rather than maximizing every track in one expedition. Numerical balance remains provisional.
+Jump power and climbing assist each offer **seven purchases**, costing 175 credits per complete track. Ground jump launch speed rises from approximately 159 to 1080 world pixels per second; climbing rises from 75 to 680. Gentler upward gravity preserves the starting jump height while slowing the initial ascent; falling retains its normal gravity. Purchased jump tiers use the stronger launch speeds and standard upward gravity. The **35-credit air jump** adds one extra jump before landing or gripping a wall. Wall grips recharge it, allowing repeated wall jump → air jump → reattach sequences. Their launch speed is tuned separately so optimized repeated ascent stays at or below climbing assist of the same upgrade tier. Mining, both mobility tracks, and air jump total 670 credits, so the 600-water candidate cutoff supports different equipment choices across runs rather than maximizing every track in one expedition. Numerical balance remains provisional.
 
 Torso-lamp radius, headlamp width, and headlamp depth each offer **two purchases** at 20 then 35 credits. Each level adds 20% to the previous value, reaching 44% above base. Torso purchases also extend the small terrain-only halo by the same percentage. Starting headlamp depth is reduced by 30% to 126 world pixels, and its full beam angle by 10% to 64.8 degrees. Torso radius starts at 55 pixels. Older saves without lamp levels receive unupgraded lamps while preserving their site and progress; the halo is derived from the restored torso level.
 
@@ -85,7 +85,13 @@ The build flag `VITE_DEV_TOOLS=true` in `.env` enables these tools for current b
 
 ## Saving
 
-One local slot supports manual Save/Load, Continue, autosaving every 30 seconds, and saving when returning to the menu or quitting. New Game confirms before replacing an expedition. Compact version 2 saves preserve terrain, partial damage, water, equipment, exploration, comparison choices, sonar/cutoff state, and whether the air jump has been spent. Version 1 saves still load with their actual world dimensions; missing jump equipment starts unpurchased, and loading does not replenish an airborne jump. Browser development and the packaged desktop game use separate local storage.
+One local slot supports manual Save/Load, Continue, autosaving every 30 seconds, and saving when returning to the menu or quitting. New Game confirms before replacing an expedition. Compact version 2 saves preserve terrain, partial damage, water, equipment, exploration, comparison choices, sonar/cutoff state, and whether the air jump has been spent. Version 1 saves still load with their actual world dimensions; missing jump equipment starts unpurchased, and loading does not replenish an airborne jump. Older saves without a stored delivery limit retain 400; new runs record 600. Browser development and the packaged desktop game use separate local storage.
+
+## Reports and release identification
+
+The candidate displays its Demo version and includes a local bug-report/save export flow accessible from pause and the ending. Reports include the build version, map seed, platform and run details, with space for a description and reproduction steps. Exporting requires a player action; the game sends no telemetry and does not upload reports automatically.
+
+Configure the optional compile-time `VITE_FEEDBACK_URL` with the actual public HTTPS feedback destination before releasing. `VITE_STORE_URL` can point to the actual Steam page once it exists. Missing or invalid URLs leave the corresponding links absent; changing them requires a rebuild. The feedback destination is still pending, so export alone is not yet a complete submission channel.
 
 ## Standalone packages
 
@@ -105,13 +111,19 @@ npm run package:mac:x64:release
 
 Outputs are under `release/`: Windows x64, macOS Apple Silicon, and macOS Intel respectively. Copy the whole Windows folder, then launch `Water Hole.exe`; Node and npm are not needed to run a package. Build macOS packages on the Mac. Current packages are unsigned and macOS signing/notarization remains release work. macOS packaging and playtesting have not been verified on this Windows host.
 
+Without a spare machine, use a guest browser session against `npm run preview` after a release build for a fresh-storage UI check, and a separate regular browser profile for save/relaunch persistence. An optional fresh local OS account can isolate packaged-app data on the same hardware. Native Windows launch was blocked by DeviceGuard on this host and remains unverified; do not bypass that policy. The existing MacBook can provide native Mac packaging/playtesting. See [the release checklist](docs/DEMO_RELEASE.md) for the concrete checks and their limits.
+
 ## Development
 
 ```sh
 npm test
 npm run build
+npm run audit:economy
+npm run benchmark
 ```
 
 Development follows TDD: confirm a failing behaviour test, implement, then refactor with tests passing. Terrain, water, movement, progression, saving, lighting, sonar, and detection remain independent of Canvas/Electron. `npm test` also checks the desktop bridge/display contract and verifies that actual release JavaScript excludes developer tools. Controls and rendering receive browser/desktop playtests.
 
-See [the demo scope](docs/DEMO.md), [art direction](docs/ART_DIRECTION.md), and [Steam release preparation](docs/STEAM_DEMO_RELEASE.md). The original [v0 scope](docs/V0.md) remains as milestone history.
+The economy audit checks purchase opportunities and seeded supply without predicting playtime. The short stress benchmark exercises deep tunnels, many water bodies, maximum mining, lighting and sonar, then writes per-operation timings, worker CPU/memory, and water-accounting metrics to gitignored `benchmark-results/`. It measures calculations rather than rendered frame rate; see [benchmark details](docs/BENCHMARK.md) and [economy review](docs/ECONOMY_REVIEW.md).
+
+See [the demo scope](docs/DEMO.md), [art direction](docs/ART_DIRECTION.md), [local release checklist](docs/DEMO_RELEASE.md), and [Steam release preparation](docs/STEAM_DEMO_RELEASE.md). Steam page setup and demo upload follow local candidate preparation; no Steam release is claimed. The original [v0 scope](docs/V0.md) remains as milestone history.

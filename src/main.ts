@@ -8,18 +8,20 @@ import { AudioEngine } from './audio';
 import { Renderer } from './render';
 import { DevPanel } from './dev-panel';
 import { DEFAULT_STEP_HEIGHT_CELLS } from './game/player';
+import { APP_VERSION, DEMO_LABEL, FEEDBACK_URL, STORE_URL } from './release-info';
+import { formatBugReport } from './reporting';
 
 declare global {
-  interface Window { waterHoleDesktop?: { setDisplay(options: { fullscreen: boolean; width: number; height: number }): Promise<void>; quit(): void } }
+  interface Window { waterHoleDesktop?: { setDisplay(options: { fullscreen: boolean; width: number; height: number }): Promise<void>; quit(): void; openExternal(url: string): Promise<void> } }
 }
 const DEV_TOOLS_ENABLED = import.meta.env.VITE_DEV_TOOLS === 'true';
-type Screen = 'home' | 'new' | 'playing' | 'pause' | 'shop' | 'settings' | 'confirm' | 'ended' | 'dev';
+type Screen = 'home' | 'new' | 'playing' | 'pause' | 'shop' | 'settings' | 'confirm' | 'ended' | 'dev' | 'support' | 'credits';
 const SAVE_KEY = 'water-hole.demo.save.v1';
 const SETTINGS_KEY = 'water-hole.settings.v1';
 const app = document.querySelector<HTMLElement>('#app')!;
 app.innerHTML = `
   <header class="topbar">
-    <div class="identity"><span class="wordmark">WATER HOLE</span><span class="version">EXCAVATION DEMO</span></div>
+    <div class="identity"><span class="wordmark">WATER HOLE</span><span class="version">${DEMO_LABEL}</span></div>
     <div class="readouts"><div class="tank-readout"><div class="readout-label"><span>WATER TANK</span><strong id="tank-label">0 / 20</strong></div>
       <div id="tank-meter" class="tank-meter" role="progressbar" aria-label="Water tank" aria-valuemin="0" aria-valuemax="20" aria-valuenow="0"><div id="tank-fill"></div></div></div>
       <div class="credits-readout"><span class="readout-label">CREDITS</span><strong id="credits">0<span> cr</span></strong></div></div>
@@ -42,6 +44,9 @@ let session = createSession();
 let vision = createVision(session.world, session.explored);
 let screen: Screen = 'home';
 let settingsReturn: Screen = 'home';
+let supportReturn: Screen = 'home';
+let creditsReturn: Screen = 'home';
+let reportDraft: string | null = null;
 let devReturn: 'playing' | 'pause' | 'shop' = 'playing';
 let hasRun = false;
 let pendingNew: SessionOptions = {};
@@ -77,6 +82,7 @@ function saveRun(notify = true): boolean {
   catch { if (notify) notice('Could not save. Local storage may be full or unavailable.'); return false; }
 }
 function restore(next: Session): void {
+  reportDraft = null;
   next.options.stepHeightCells = DEFAULT_STEP_HEIGHT_CELLS;
   if (!DEV_TOOLS_ENABLED) {
     next.options.debugVision = false;
@@ -101,8 +107,9 @@ function saveSettings(): void {
 function heading(eyebrow: string, title: string, text = ''): string { return `<span class="eyebrow">${eyebrow}</span><h1>${title}</h1>${text ? `<p class="panel-intro">${text}</p>` : ''}`; }
 function button(action: string, label: string, primary = false, disabled = false): string { return `<button type="button" data-action="${action}" class="${primary ? 'primary-button' : 'menu-button'}" ${disabled ? 'disabled' : ''}>${label}</button>`; }
 function changeScreen(next: Screen): void {
+  if (screen === 'support') reportDraft = el<HTMLTextAreaElement>('bug-report').value;
   clearInput(); bindingAction = null; screen = next; el('overlay').hidden = next === 'playing';
-  audio.setActive(next !== 'pause' && next !== 'settings' && next !== 'dev'); renderPanel();
+  audio.setActive(!['pause', 'settings', 'dev', 'support', 'credits'].includes(next)); renderPanel();
   updateHUD();
   if (next === 'playing') canvas.focus({ preventScroll: true });
 }
@@ -112,18 +119,41 @@ function renderPanel(): void {
   const saved = !!read(SAVE_KEY);
   switch (screen) {
     case 'home': el('panel').innerHTML = `${heading('A SMALL INDUSTRIAL EXPEDITION', 'Useful work.<br>Deeper ground.', 'Find water beneath the surface. Bring it back. Build the equipment to go further.')}
-      <div class="menu-stack">${hasRun && !session.completed ? button('resume', 'Resume expedition', true) : ''}${button('new', 'New game', !hasRun || session.completed)}${button('load', 'Continue saved game', false, !saved)}${button('settings', 'Settings')}${window.waterHoleDesktop ? button('quit', 'Quit') : ''}</div><p class="small-note">A finite site. A pickaxe. A water exchange.</p>`; break;
+      <div class="menu-stack">${hasRun && !session.completed ? button('resume', 'Resume expedition', true) : ''}${button('new', 'New game', !hasRun || session.completed)}${button('load', 'Continue saved game', false, !saved)}${button('settings', 'Settings')}${button('support', 'Feedback / report a bug')}${button('credits', 'Credits')}${window.waterHoleDesktop ? button('quit', 'Quit') : ''}</div><p class="small-note">A finite site. A pickaxe. A water exchange.</p>`; break;
     case 'new': el('panel').innerHTML = `${heading('NEW EXPEDITION', 'Choose your site', 'Choose a seed to generate a fresh excavation site.')}
       <form id="new-form"><label class="setting-row">Site seed<input id="site-seed" type="number" min="0" max="4294967295" step="1" value="${crypto.getRandomValues(new Uint32Array(1))[0]}"></label>
       <div class="panel-actions"><button type="submit" class="primary-button">Begin expedition</button>${button('back-home', 'Back')}</div></form><p class="small-note">A new expedition replaces the single saved game after confirmation.</p>`;
       break;
     case 'confirm': el('panel').innerHTML = `${heading('START OVER', 'Replace this expedition?', 'Starting a new game replaces your current expedition and saved game.')}<div class="panel-actions">${button('confirm-new', 'Start new expedition', true)}${button('cancel-new', 'Keep current expedition')}</div>`; break;
-    case 'pause': el('panel').innerHTML = `${heading('EXPEDITION PAUSED', 'Take a breather', 'Terrain, water, and equipment are paused.')}<div class="menu-stack">${button('resume', 'Resume', true)}${button('save', 'Save game')}${button('load', 'Load saved game', false, !saved)}${button('settings', 'Settings')}${button('home', 'Save & return to menu')}${window.waterHoleDesktop ? button('quit', 'Save & quit') : ''}</div>`; break;
+    case 'pause': el('panel').innerHTML = `${heading('EXPEDITION PAUSED', 'Take a breather', 'Terrain, water, and equipment are paused.')}<div class="menu-stack">${button('resume', 'Resume', true)}${button('save', 'Save game')}${button('load', 'Load saved game', false, !saved)}${button('settings', 'Settings')}${button('support', 'Feedback / report a bug')}${button('home', 'Save & return to menu')}${window.waterHoleDesktop ? button('quit', 'Save & quit') : ''}</div>`; break;
     case 'shop': renderShop(); break;
     case 'settings': renderSettings(); break;
+    case 'support': renderSupport(); break;
+    case 'credits': el('panel').innerHTML = `${heading('WATER HOLE', 'Credits')}<dl class="credit-list"><dt>Created by</dt><dd>zelin2022</dd><dt>Visuals & sound</dt><dd>Procedural artwork and original synthesized music and sound effects.</dd><dt>Runtime</dt><dd>Electron and Chromium. Third-party license notices are included with the desktop application.</dd></dl><p class="small-note">${DEMO_LABEL}</p><div class="panel-actions">${button('credits-back', 'Back', true)}</div>`; break;
     case 'dev': if (DEV_TOOLS_ENABLED) el('panel').innerHTML = devPanel!.render(); break;
-    case 'ended': el('panel').innerHTML = `${heading('WATER HOLE', 'Thanks for playing<br>the demo.', 'You have reached the end of this demo. Thanks for spending some time underground.')}<div class="panel-actions">${button('new', 'New expedition', true)}${button('home', 'Main menu')}${window.waterHoleDesktop ? button('quit', 'Quit') : ''}</div>`; break;
+    case 'ended': el('panel').innerHTML = `${heading('WATER HOLE', 'Thanks for playing<br>the demo.', 'You have reached the end of this demo. Thanks for spending some time underground.')}<div class="panel-actions">${button('support', 'Feedback / report a bug', true)}${STORE_URL ? button('store', 'Wishlist on Steam') : ''}${button('new', 'New expedition')}${button('home', 'Main menu')}${window.waterHoleDesktop ? button('quit', 'Quit') : ''}</div>`; break;
   }
+}
+function renderSupport(): void {
+  el('panel').innerHTML = `${heading('FEEDBACK / BUG REPORT', 'Help improve the next expedition', 'Describe what happened below. The report includes your site seed, equipment, and demo version so an issue can be reproduced.')}<label class="report-label" for="bug-report">Your report</label><textarea id="bug-report" rows="12" spellcheck="false"></textarea><div class="panel-actions">${button('copy-report', 'Copy report', true)}${button('download-report', 'Download report')}${hasRun ? button('download-save', 'Download save') : ''}${FEEDBACK_URL ? button('feedback-page', 'Open feedback page') : ''}</div><p class="small-note">${FEEDBACK_URL ? 'Open the feedback page to send your report. You can attach an exported save if it helps explain the issue.' : 'The feedback channel is being prepared. You can copy or download a report below.'} Nothing is sent automatically.</p><div class="panel-actions">${button('support-back', 'Back')}</div>`;
+  el<HTMLTextAreaElement>('bug-report').value = reportDraft ?? formatBugReport(hasRun ? session : null, navigator.platform);
+}
+function downloadText(name: string, text: string, type: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const link = document.createElement('a'); link.href = url; link.download = name;
+  document.body.append(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+async function copyReport(): Promise<void> {
+  try { await navigator.clipboard.writeText(el<HTMLTextAreaElement>('bug-report').value); notice('Report copied.'); }
+  catch { notice('Could not copy. Download the report, or select its text and copy it.'); }
+}
+async function openReleaseLink(url: string | null): Promise<void> {
+  if (!url) return;
+  try {
+    if (window.waterHoleDesktop) await window.waterHoleDesktop.openExternal(url);
+    else window.open(url, '_blank', 'noopener,noreferrer');
+  } catch { notice('Could not open the page. Please try again.'); }
 }
 function statDescription(id: UpgradeId): string {
   const stats = upgradeStats(session.tank), level = session.tank.upgrades[id];
@@ -207,6 +237,15 @@ el('panel').addEventListener('click', event => {
     case 'home': if (hasRun && !saveRun()) return; changeScreen('home'); break;
     case 'settings': settingsReturn = screen; changeScreen('settings'); break;
     case 'settings-back': changeScreen(settingsReturn); break;
+    case 'support': supportReturn = screen; changeScreen('support'); break;
+    case 'support-back': changeScreen(supportReturn); break;
+    case 'credits': creditsReturn = screen; changeScreen('credits'); break;
+    case 'credits-back': changeScreen(creditsReturn); break;
+    case 'copy-report': void copyReport(); break;
+    case 'download-report': downloadText(`water-hole-report-v${APP_VERSION}.txt`, el<HTMLTextAreaElement>('bug-report').value, 'text/plain;charset=utf-8'); break;
+    case 'download-save': if (hasRun) { syncSonar(); downloadText(`water-hole-save-${session.seed}-v${APP_VERSION}.json`, serializeSession(session), 'application/json'); } break;
+    case 'feedback-page': void openReleaseLink(FEEDBACK_URL); break;
+    case 'store': void openReleaseLink(STORE_URL); break;
     case 'reset-bindings': settings.bindings = { ...DEFAULT_SETTINGS.bindings }; bindingAction = null; saveSettings(); renderSettings(); break;
     case 'apply-display': void applyDisplay(); break;
     case 'quit': if (hasRun && !saveRun()) return; window.waterHoleDesktop?.quit(); break;
@@ -230,6 +269,10 @@ window.addEventListener('keydown', event => {
   void audio.unlock().catch(() => {});
   if (bindingAction) { event.preventDefault(); captureBinding(event.code); return; }
   if ((event.ctrlKey && event.code !== 'ControlLeft') || event.metaKey || event.altKey) return;
+  if (screen === 'support' || screen === 'credits') {
+    if (event.code === 'Escape' && !event.repeat) { event.preventDefault(); changeScreen(screen === 'support' ? supportReturn : creditsReturn); }
+    return;
+  }
   if (DEV_TOOLS_ENABLED && event.code === 'Backquote') {
     if (screen === 'dev') { event.preventDefault(); if (!event.repeat) changeScreen(devReturn); }
     else if (hasRun && !session.completed && (screen === 'playing' || screen === 'pause' || screen === 'shop')) {

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Water Hole">
+  <defs>
+    <linearGradient id="steel" x2="0" y2="1">
+      <stop stop-color="#243b43"/>
+      <stop offset="1" stop-color="#102329"/>
+    </linearGradient>
+    <linearGradient id="water" x1="0" y1="0" x2="0.7" y2="1">
+      <stop stop-color="#6ad7df"/>
+      <stop offset="1" stop-color="#248c9e"/>
+    </linearGradient>
+    <clipPath id="edge"><rect x="40" y="40" width="944" height="944" rx="180"/></clipPath>
+  </defs>
+  <rect x="40" y="40" width="944" height="944" rx="180" fill="url(#steel)"/>
+  <g clip-path="url(#edge)">
+    <path d="M40 735 220 706 413 755 631 700 984 744V984H40Z" fill="#705f4d"/>
+    <path d="m40 813 244-31 220 57 229-50 251 46v149H40Z" fill="#48575c"/>
+    <path d="m40 895 203-20 253 38 260-30 228 29v72H40Z" fill="#293d44"/>
+    <path d="M440 170C402 249 280 361 280 462a160 160 0 0 0 320 0c0-101-122-213-160-292Z" fill="#0c252d" stroke="#0c252d" stroke-width="40"/>
+    <path d="M440 170C402 249 280 361 280 462a160 160 0 0 0 320 0c0-101-122-213-160-292Z" fill="url(#water)"/>
+    <path d="M338 453c0 58 35 102 87 114" fill="none" stroke="#a3eef0" stroke-opacity=".7" stroke-width="24" stroke-linecap="round"/>
+    <path d="m362 817 325-418" fill="none" stroke="#14282d" stroke-width="94" stroke-linecap="round"/>
+    <path d="m362 817 325-418" fill="none" stroke="#c08c4b" stroke-width="58" stroke-linecap="round"/>
+    <path d="m370 800 290-373" fill="none" stroke="#e2b96e" stroke-width="15" stroke-linecap="round"/>
+    <path d="M498 312c169-20 299 74 369 236l-50-30c-89-95-194-142-321-148Z" fill="#14282d" stroke="#14282d" stroke-width="30" stroke-linejoin="round"/>
+    <path d="M498 312c169-20 299 74 369 236l-50-30c-89-95-194-142-321-148Z" fill="#cbd2bd"/>
+    <path d="M499 312c142-16 262 52 335 172-92-100-211-137-337-143Z" fill="#f0e4bd"/>
+    <path d="m649 389 39-51 49 29-42 63Z" fill="#6c7772"/>
+  </g>
+  <rect x="50" y="50" width="924" height="924" rx="170" fill="none" stroke="#729095" stroke-opacity=".45" stroke-width="12"/>
+</svg>

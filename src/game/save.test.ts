@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createSession, DEMO_DELIVERY_LIMIT, type SessionOptions } from './session';
+import { createSession, DEMO_DELIVERY_LIMIT, stepSession, type SessionOptions } from './session';
 import { collectIntoTank, buyUpgrade, upgradeStats } from './economy';
 import { totalWater } from './water';
 import { deserializeSession, serializeSession } from './save';
@@ -33,6 +33,70 @@ function createShallowSession(options: SessionOptions = {}): Session {
 }
 
 describe('compact deep-world saves', () => {
+  it('persists the 600-water cutoff for a new expedition', () => {
+    const original = createSession({ seed: 42 });
+    expect(original.deliveryLimit).toBe(600);
+    const restored = deserializeSession(serializeSession(original));
+    expect(restored.deliveryLimit).toBe(600);
+    expect(restored.world.water).toEqual(original.world.water);
+    expect(restored.initialWater).toBe(original.initialWater);
+  });
+
+  it.each([1, 2])('keeps active and ended v%i saves without a limit on their original 400-water cutoff', version => {
+    for (const completed of [false, true]) {
+      const original = createSession({ seed: 42 });
+      const delivered = completed ? 400 : 399;
+      let remaining = delivered + 2;
+      for (let index = 0; index < original.world.water.length && remaining > 0; index++) {
+        const transferred = Math.min(remaining, original.world.water[index]);
+        original.world.water[index] -= transferred;
+        remaining -= transferred;
+      }
+      expect(remaining).toBe(0);
+      original.delivered = delivered;
+      original.tank.credits = delivered;
+      original.tank.water = 2;
+      original.completed = completed;
+      const data = JSON.parse(version === 1 ? serializeLegacySession(original) : serializeSession(original));
+      delete data.session.deliveryLimit;
+      const restored = deserializeSession(JSON.stringify(data));
+      expect(restored.deliveryLimit).toBe(400);
+      expect(restored.completed).toBe(completed);
+      expect(restored.delivered).toBe(delivered);
+      expect(restored.tank).toEqual(original.tank);
+      expect(restored.world.material.every((value, index) => value === original.world.material[index])).toBe(true);
+      expect(restored.world.water.every((value, index) => value === original.world.water[index])).toBe(true);
+      expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(original.initialWater, 5);
+      expect(deserializeSession(serializeSession(restored)).deliveryLimit).toBe(400);
+      const snapshot = serializeSession(restored);
+      stepSession(restored, { left: false, right: false, up: false, down: false, jumpPressed: false,
+        digging: false, aim: { x: 0, y: 0 }, collecting: false, depositPressed: true }, 0.1);
+      if (completed) expect(serializeSession(restored)).toBe(snapshot);
+      else {
+        expect(restored.completed).toBe(true);
+        expect(restored.delivered).toBe(400);
+        expect(restored.tank.water).toBe(1);
+        expect(restored.tank.credits).toBe(400);
+        expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(original.initialWater, 5);
+      }
+    }
+  });
+
+  it('rejects invalid delivery limits and end states inconsistent with the saved cutoff', () => {
+    for (const limit of [null, -1, 0, 399, 400.5, 599, 601, 1000000, '600']) {
+      expect(() => deserializeSession(corrupt(data => data.session.deliveryLimit = limit))).toThrow(/delivery limit/);
+    }
+    expect(() => deserializeSession(corrupt(data => {
+      data.session.deliveryLimit = 600; data.session.delivered = 400; data.session.completed = true;
+    }))).toThrow(/demo end state/);
+    expect(() => deserializeSession(corrupt(data => {
+      data.session.deliveryLimit = 400; data.session.delivered = 400; data.session.completed = false;
+    }))).toThrow(/demo end state/);
+    expect(() => deserializeSession(corrupt(data => {
+      data.session.deliveryLimit = 400; data.session.delivered = 401;
+    }))).toThrow(/progress ledger/);
+  });
+
   it('round-trips a 2000-metre site well below the browser storage quota without quantizing water', () => {
     const session = createSession({ seed: 42 });
     const world = new World(384, 2053, 4);

@@ -1,5 +1,5 @@
 import { UPGRADE_DEFINITIONS, upgradeStats, type Tank } from './economy';
-import { DEMO_DELIVERY_LIMIT, DIG_INTERVAL, DIG_WINDUP, type Session } from './session';
+import { DEMO_DELIVERY_LIMIT, LEGACY_DEMO_DELIVERY_LIMIT, DIG_INTERVAL, DIG_WINDUP, type Session } from './session';
 import { World } from './world';
 import { totalWater } from './water';
 import { detachSmallDirt, DIRT_TERMINAL_SPEED } from './dirt';
@@ -122,10 +122,14 @@ export function deserializeSession(json: string): Session {
   assert(waterDistribution === 'depth-weighted' || waterDistribution === 'many-small'
     || waterDistribution === 'fewer-large', 'comparison options');
   assert(finite(state.surfaceY, 0, extentY) && point(state.hopper, extentX, extentY), 'surface or machine');
-  assert(finite(state.time) && finite(state.initialWater) && finite(state.delivered, 0, DEMO_DELIVERY_LIMIT), 'progress ledger');
+  // Earlier v1 and v2 saves have a 400-water wall. Keep their active or ended
+  // state intact rather than extending an expedition after a balance update.
+  const deliveryLimit = state.deliveryLimit === undefined ? LEGACY_DEMO_DELIVERY_LIMIT : state.deliveryLimit;
+  assert(deliveryLimit === LEGACY_DEMO_DELIVERY_LIMIT || deliveryLimit === DEMO_DELIVERY_LIMIT, 'delivery limit');
+  assert(finite(state.time) && finite(state.initialWater) && finite(state.delivered, 0, deliveryLimit), 'progress ledger');
   const devCreditAdjustment = state.devCreditAdjustment === undefined ? 0 : state.devCreditAdjustment;
   assert(finite(devCreditAdjustment, -Number.MAX_SAFE_INTEGER), 'credit adjustment');
-  assert(typeof state.completed === 'boolean' && state.completed === (state.delivered >= DEMO_DELIVERY_LIMIT), 'demo end state');
+  assert(typeof state.completed === 'boolean' && state.completed === (state.delivered >= deliveryLimit), 'demo end state');
   assert(typeof state.unloading === 'boolean' && !(state.completed && state.unloading), 'unloading state');
   assert(state.facing === -1 || state.facing === 1, 'facing');
   assert(finite(state.digCooldown, 0, DIG_INTERVAL) && (state.strikeTime === -1 || finite(state.strikeTime, 0, DIG_WINDUP)), 'pick timing');
@@ -195,7 +199,7 @@ export function deserializeSession(json: string): Session {
   // Existing active v1 runs may contain old floating obstacles. Migrate once;
   // completed runs retain their frozen terrain and new saves keep their debris.
   if (state.fallingDirt === undefined && !state.completed) fallingDirt = detachSmallDirt(world);
-  return { ...state, world, fallingDirt, devCreditAdjustment, subsurfaceScan, lastSubsurfaceScanAt,
+  return { ...state, world, deliveryLimit, fallingDirt, devCreditAdjustment, subsurfaceScan, lastSubsurfaceScanAt,
     options: { ...state.options, stepHeightCells: DEFAULT_STEP_HEIGHT_CELLS, waterDistribution, caveMemory: 'sonar', headlamp: 'mouse' },
     explored: Uint8Array.from(state.explored) } as Session;
 }

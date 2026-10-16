@@ -24,6 +24,7 @@ try {
     dir: staging,
     name: 'Water Hole',
     executableName: 'Water Hole',
+    icon: path.join(root, 'public', platform === 'darwin' ? 'app-icon.icns' : 'app-icon.ico'),
     platform,
     arch,
     electronVersion: manifest.devDependencies.electron,
