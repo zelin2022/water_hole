@@ -30,6 +30,8 @@ The underground starter shaft is beside the exchange. Airborne wall contact atta
 
 Clinging needs continuous wall support; single-cell obstacles do not trigger it. The attached pose grips the wall with both hands before the harness upgrade, then visibly wields the pickaxe after installation. Underground darkness conceals the environment. Pale moonlight enters exposed openings and weakens in narrow shafts; warm head/torso lights reveal the nearby surroundings. Remembered mode keeps a faint explored outline, while sonar mode needs light or a ping to reveal it.
 
+Detached dirt islands of up to three cells fall away and disappear on landing. The fragments do not block movement or displace water. Larger islands and stone stay intact.
+
 ## Default controls
 
 | Input | Action |
@@ -46,6 +48,8 @@ Clinging needs continuous wall support; single-cell obstacles do not trigger it.
 | Escape | Pause / return from menus |
 
 Climbing is unlimited and water is harmless. The shop offers pick radius, pick damage, climb speed, tank capacity, water detection/range, wall digging, and sonar. Numerical balance is provisional. Settings include display presets/fullscreen, music/SFX volume, and keybindings. Escape remains reserved for pause/menu navigation.
+
+Unavailable and fully installed upgrades are hidden. Eligible upgrades without enough credits show their price in red; the install button becomes available when funded. Buying a water detector reveals its range upgrades.
 
 ## Saving
 

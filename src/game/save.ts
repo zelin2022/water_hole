@@ -2,6 +2,7 @@ import { UPGRADE_DEFINITIONS, upgradeStats, type Tank } from './economy';
 import { DEMO_DELIVERY_LIMIT, DIG_INTERVAL, DIG_WINDUP, type Session } from './session';
 import { World } from './world';
 import { totalWater } from './water';
+import { detachSmallDirt, DIRT_TERMINAL_SPEED } from './dirt';
 
 export const SAVE_VERSION = 1;
 const MAX_CELLS = 1024 * 1024;
@@ -60,6 +61,12 @@ export function deserializeSession(json: string): Session {
     assert(raw.damage[index] < (raw.material[index] === 2 ? 3 : 1), 'broken terrain left solid');
   }
   const extentX = raw.width * raw.cellSize, extentY = raw.height * raw.cellSize;
+  let fallingDirt = state.fallingDirt === undefined ? [] : state.fallingDirt;
+  assert(Array.isArray(fallingDirt) && fallingDirt.length <= count
+    && fallingDirt.every(particle => record(particle)
+      && finite(particle.x, 0, extentX - raw.cellSize)
+      && finite(particle.y, 0, extentY - raw.cellSize)
+      && finite(particle.vy, 0, DIRT_TERMINAL_SPEED)), 'falling dirt');
   assert(Number.isInteger(state.seed) && finite(state.seed, 0, 0xffffffff), 'seed');
   assert(record(state.options) && state.options.seed === state.seed
     && ['remembered', 'sonar'].includes(state.options.caveMemory)
@@ -111,5 +118,8 @@ export function deserializeSession(json: string): Session {
   world.terrainVersion = 1;
   const accounted = totalWater(world) + tank.water + state.delivered;
   assert(Math.abs(accounted - state.initialWater) <= 0.05 + state.initialWater * 0.0001, 'water ledger mismatch');
-  return { ...state, world, explored: Uint8Array.from(state.explored) } as Session;
+  // Existing active v1 runs may contain old floating obstacles. Migrate once;
+  // completed runs retain their frozen terrain and new saves keep their debris.
+  if (state.fallingDirt === undefined && !state.completed) fallingDirt = detachSmallDirt(world);
+  return { ...state, world, fallingDirt, explored: Uint8Array.from(state.explored) } as Session;
 }

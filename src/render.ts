@@ -69,6 +69,7 @@ export class Renderer {
     if (this.cachedWorld !== world || this.cachedVersion !== world.terrainVersion) this.cacheTerrain(world);
     ctx.drawImage(this.terrain, 0, 0);
     this.drawWater(session);
+    this.drawFallingDirt(session);
     this.drawMachine(session);
     this.drawActions(session, aim, collecting, vision);
     // All environmental geometry, including cut bevels, water and machinery,
@@ -182,6 +183,20 @@ export class Renderer {
       }
     }
     this.cachedWorld = world; this.cachedVersion = world.terrainVersion;
+  }
+
+  private drawFallingDirt(session: Session): void {
+    const ctx = this.context, size = session.world.cellSize;
+    for (const fragment of session.fallingDirt) {
+      if (fragment.x + size < this.cameraX || fragment.x > this.cameraX + this.width / ZOOM
+        || fragment.y + size < this.cameraY || fragment.y > this.cameraY + this.height / ZOOM) continue;
+      ctx.fillStyle = '#806852';
+      ctx.beginPath(); ctx.moveTo(fragment.x, fragment.y + size * 0.15);
+      ctx.lineTo(fragment.x + size * 0.7, fragment.y); ctx.lineTo(fragment.x + size, fragment.y + size * 0.4);
+      ctx.lineTo(fragment.x + size * 0.8, fragment.y + size); ctx.lineTo(fragment.x + size * 0.1, fragment.y + size * 0.85);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#b09673'; ctx.fillRect(fragment.x + size * 0.2, fragment.y + size * 0.2, size * 0.5, size * 0.2);
+    }
   }
 
   private drawWater(session: Session): void {

@@ -2,6 +2,7 @@ import type { Point, World } from './world';
 import { collectWater } from './water';
 
 export type UpgradeId = 'digRadius' | 'digDamage' | 'climbSpeed' | 'capacity' | 'detector' | 'detectorRange' | 'wallDig' | 'sonar';
+export type UpgradeAvailability = 'unavailable' | 'unaffordable' | 'available';
 export interface UpgradeDefinition {
   id: UpgradeId;
   name: string;
@@ -46,11 +47,17 @@ export function upgradeStats(tank: Tank) {
   };
 }
 
-export function canBuyUpgrade(tank: Tank, id: UpgradeId): boolean {
+/** Visibility is determined by progression before the current balance is considered. */
+export function upgradeAvailability(tank: Tank, id: UpgradeId): UpgradeAvailability {
   const definition = UPGRADE_DEFINITIONS.find(item => item.id === id);
-  if (!definition || (definition.requires && !tank.upgrades[definition.requires])) return false;
+  if (!definition || (definition.requires && !tank.upgrades[definition.requires])) return 'unavailable';
   const cost = definition.costs[tank.upgrades[id]];
-  return cost !== undefined && Number.isFinite(tank.credits) && tank.credits + CREDIT_EPSILON >= cost;
+  if (cost === undefined) return 'unavailable';
+  return Number.isFinite(tank.credits) && tank.credits + CREDIT_EPSILON >= cost ? 'available' : 'unaffordable';
+}
+
+export function canBuyUpgrade(tank: Tank, id: UpgradeId): boolean {
+  return upgradeAvailability(tank, id) === 'available';
 }
 
 export function buyUpgrade(tank: Tank, id: UpgradeId): boolean {

@@ -10,6 +10,7 @@ The demo develops the excavation and water-selling loop into a presentable Steam
 - Give terrain durability so harder material can require several strikes. Keep partial damage when leaving an area or saving.
 - Use mouse position to choose digging direction rather than strike distance. The strike centre has a fixed distance from the character for a given digging radius, and that distance scales with radius. Tune the geometry against adjacent walls, floors, and narrow tunnels.
 - Add terrain variety, smaller water pockets, and a slower, visible transfer of water into the hopper.
+- Detached dirt islands of one to three cells fall and disappear on landing, clearing small floating obstacles. Shared-edge contact with other solid terrain anchors a dirt group. Larger islands and stone do not collapse. Falling fragments are nonblocking and do not displace water.
 - Keep water accounted for across terrain, the tank, and the machine. Credit only the amount actually transferred, including interrupted transfers.
 
 ## Selectable comparison builds
@@ -67,6 +68,8 @@ The following selection is approved for the provisional build and remains subjec
 | Digging while attached to a wall | One purchase; disabled before purchase |
 
 Start with roughly one or two purchased levels per repeatable track, then tune the level counts, prices, effects, and water distribution together. These are provisional bounds, not final caps. The shop must show the current stat, purchase effect, price, and affordability.
+
+Hide unavailable upgrades, including unmet prerequisites and equipment with no remaining levels. Show eligible upgrades without enough funding with a red price such as "40 cr"; funded upgrades retain the install button. Keep the current prerequisites for this provisional build; the larger upgrade tree will be designed after the demo.
 
 ### Other upgrade ideas retained for tuning
 

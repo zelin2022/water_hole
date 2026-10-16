@@ -62,6 +62,37 @@ describe('versioned local saves', () => {
     expect(deserializeSession(serializeSession(session)).completed).toBe(true);
   });
 
+  it('round-trips falling dirt and accepts earlier v1 saves without it', () => {
+    const session = createSession({ seed: 42 });
+    session.fallingDirt = [{ x: 240, y: 80.25, vy: 120 }];
+    const restored = deserializeSession(serializeSession(session));
+    expect(restored.fallingDirt).toEqual(session.fallingDirt);
+    expect(restored.fallingDirt).not.toBe(session.fallingDirt);
+    const earlier = JSON.parse(serializeSession(session));
+    delete earlier.session.fallingDirt;
+    expect(deserializeSession(JSON.stringify(earlier)).fallingDirt).toEqual([]);
+  });
+
+  it('clears pre-existing small dirt obstacles once when loading an earlier active save', () => {
+    const session = createSession({ seed: 42 });
+    for (let x = 60; x < 63; x++) session.world.setMaterial(x, 20, 1);
+    const earlier = JSON.parse(serializeSession(session));
+    delete earlier.session.fallingDirt;
+    const restored = deserializeSession(JSON.stringify(earlier));
+    expect(restored.fallingDirt).toHaveLength(3);
+    for (let x = 60; x < 63; x++) expect(restored.world.isSolid(x, 20)).toBe(false);
+    expect(totalWater(restored.world)).toBeCloseTo(restored.initialWater, 5);
+  });
+
+  it('rejects malformed, out-of-world or excessive falling dirt data', () => {
+    for (const fallingDirt of [null, [{ x: -1, y: 20, vy: 0 }], [{ x: 20, y: 20, vy: -1 }],
+      [{ x: 20, y: 1000000, vy: 0 }], [{ x: 20, y: 20, vy: 1000000 }]]) {
+      expect(() => deserializeSession(corrupt(data => data.session.fallingDirt = fallingDirt))).toThrow(/falling dirt/);
+    }
+    expect(() => deserializeSession(corrupt(data => data.session.fallingDirt =
+      Array.from({ length: data.world.solid.length + 1 }, () => ({ x: 20, y: 20, vy: 0 }))))).toThrow(/falling dirt/);
+  });
+
   it('rejects malformed data, unsupported versions and unbounded worlds', () => {
     expect(() => deserializeSession('not json')).toThrow();
     expect(() => deserializeSession(corrupt(data => data.version = 20))).toThrow();

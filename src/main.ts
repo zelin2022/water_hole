@@ -1,5 +1,5 @@
 import './style.css';
-import { buyUpgrade, canBuyUpgrade, UPGRADE_DEFINITIONS, upgradeStats, type UpgradeId } from './game/economy';
+import { buyUpgrade, upgradeAvailability, UPGRADE_DEFINITIONS, upgradeStats, type UpgradeId } from './game/economy';
 import { createSession, nearHopper, playerCenter, stepSession, type GameInput, type Session, type SessionOptions } from './game/session';
 import { deserializeSession, serializeSession } from './game/save';
 import { createVision, pingSonar, SONAR_COOLDOWN, updateVision } from './game/vision';
@@ -119,10 +119,12 @@ function statDescription(id: UpgradeId): string {
 }
 function renderShop(): void {
   el('panel').innerHTML = `${heading('WATER EXCHANGE / EQUIPMENT', 'Make the next trip easier', `${format(session.tank.credits)} credits available`)}<div class="upgrade-grid">${UPGRADE_DEFINITIONS.map(definition => {
+    const availability = upgradeAvailability(session.tank, definition.id);
+    if (availability === 'unavailable') return '';
     const level = session.tank.upgrades[definition.id], cost = definition.costs[level];
-    const locked = definition.requires && !session.tank.upgrades[definition.requires], maximum = cost === undefined;
+    const unaffordable = availability === 'unaffordable';
     return `<article class="upgrade-card"><div class="upgrade-title"><h2>${definition.name}</h2><span>${level} / ${definition.costs.length}</span></div><p>${definition.description}</p><div class="upgrade-effect">${statDescription(definition.id)}</div>
-      <button type="button" data-purchase="${definition.id}" class="purchase-button" ${!canBuyUpgrade(session.tank, definition.id) ? 'disabled' : ''}>${maximum ? 'Fully installed' : locked ? 'Requires water detector' : `Install · ${cost} cr`}</button></article>`;
+      <button type="button" data-purchase="${definition.id}" class="purchase-button${unaffordable ? ' unaffordable' : ''}" ${unaffordable ? 'disabled' : ''}>${unaffordable ? `${cost} cr` : `Install · ${cost} cr`}</button></article>`;
   }).join('')}</div><div class="panel-actions">${button('resume', 'Return to work', true)}</div>`;
 }
 function renderSettings(): void {

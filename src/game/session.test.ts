@@ -105,6 +105,32 @@ describe('demo session', () => {
     expect(session.lastStrike).not.toBeNull();
   });
 
+  it('turns a small dirt remnant outside the pick brush into falling, nonblocking debris', () => {
+    const session = fixture();
+    for (let x = 26; x <= 31; x++) session.world.setMaterial(x, 26, 1);
+    session.world.water[session.world.index(35, 29)] = 0.75;
+    session.initialWater = totalWater(session.world);
+    advance(session, 0.15, { digging: true, aim: { x: 300, y: 104 } });
+    expect(session.lastStrike?.removed).toBe(3);
+    for (let x = 29; x <= 31; x++) expect(session.world.isSolid(x, 26)).toBe(false);
+    expect(session.fallingDirt).toHaveLength(3);
+    expect(session.fallingDirt.every(particle => particle.y > 104)).toBe(true);
+    expect(totalWater(session.world) + session.tank.water + session.delivered).toBeCloseTo(session.initialWater, 5);
+    advance(session, 1);
+    expect(session.fallingDirt).toEqual([]);
+  });
+
+  it('also cleans an island severed by an intercepted face nearer than the circular brush', () => {
+    const session = fixture();
+    // The x=88 face is between the player centre (80,104) and the brush;
+    // the upper remnant lies outside the circular brush centered at (104,104).
+    for (let y = 22; y < 30; y++) session.world.setMaterial(22, y, 1);
+    advance(session, 0.15, { digging: true, aim: { x: 300, y: 104 } });
+    for (let y = 22; y < 25; y++) expect(session.world.isSolid(22, y)).toBe(false);
+    expect(session.fallingDirt).toHaveLength(2);
+    expect(session.fallingDirt.every(particle => particle.x === 88)).toBe(true);
+  });
+
   it('conserves world, tank and delivered water throughout collection and timed unloading', () => {
     const session = fixture();
     for (let x = 16; x < 21; x++) session.world.water[session.world.index(x, 29)] = 1;

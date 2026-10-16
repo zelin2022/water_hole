@@ -2,8 +2,9 @@ import { createPlayer, stepPlayer, type Player, type PlayerInput } from './playe
 import { buyUpgrade, collectIntoTank, createTank, depositAtHopper, upgradeStats, type Tank, type UpgradeId } from './economy';
 import type { Point, World } from './world';
 import { stepWater, totalWater } from './water';
-import { damageStrike } from './digging';
+import { damageStrike, DIG_REACH_PADDING } from './digging';
 import { generateSite } from './generation';
+import { detachSmallDirt, stepFallingDirt, type FallingDirt } from './dirt';
 
 export const DIG_RADIUS = 12;
 export const DIG_REACH = 24;
@@ -52,6 +53,7 @@ export interface Session {
   explored: Uint8Array;
   sonar: SonarSave | null;
   lastSonarAt: number;
+  fallingDirt: FallingDirt[];
 }
 
 export function createSession(options: SessionOptions = {}): Session {
@@ -71,6 +73,7 @@ export function createSession(options: SessionOptions = {}): Session {
     unloading: false, facing: 1,
     explored: new Uint8Array(site.world.solid.length),
     sonar: null, lastSonarAt: -15,
+    fallingDirt: detachSmallDirt(site.world),
   };
 }
 
@@ -100,6 +103,12 @@ function stepDigging(session: Session, input: GameInput, dt: number): void {
   if (session.strikeTime > 0) return;
   const stats = upgradeStats(session.tank);
   const result = damageStrike(session.world, playerCenter(session), input.aim, stats.digRadius, stats.digDamage, session.facing);
+  if (result.removed > 0) {
+    // Any newly detached island must touch a removed cell in the pick's reach.
+    session.fallingDirt.push(...detachSmallDirt(session.world, {
+      center: playerCenter(session), radius: stats.digRadius * 2 + DIG_REACH_PADDING + session.world.cellSize,
+    }));
+  }
   session.lastStrike = { ...result, time: session.time };
   session.strikeTime = -1;
 }
@@ -109,6 +118,7 @@ export function stepSession(session: Session, input: GameInput, dt: number): voi
   session.time += dt;
   if (input.left !== input.right) session.facing = input.right ? 1 : -1;
   stepDigging(session, input, dt);
+  stepFallingDirt(session.world, session.fallingDirt, dt);
   stepPlayer(session.world, session.player, input, dt, { climbSpeed: upgradeStats(session.tank).climbSpeed });
   stepWater(session.world, dt);
   const center = playerCenter(session);

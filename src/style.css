@@ -61,6 +61,7 @@ kbd { font-family: inherit; font-size: 10px; padding: 3px 5px; min-width: 19px; 
 .upgrade-card p { color: #a7bbbd; font-size: 12px; line-height: 1.6; min-height: 36px; margin: 9px 0; }
 .upgrade-effect { color: #b6cbbd; font-size: 11px; margin: 11px 0; }
 .purchase-button { width: 100%; padding: 9px 12px; color: #d6bc88; font-size: 12px; }
+.purchase-button.unaffordable:disabled { color: #ee8980; }
 .panel-settings { width: min(780px, 100%); }
 .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; }
 .settings-grid h2 { font-size: 15px; font-weight: 550; color: #d5ded7; margin: 20px 0 12px; }

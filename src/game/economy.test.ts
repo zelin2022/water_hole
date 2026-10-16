@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { World } from './world';
 import { totalWater } from './water';
-import { buyUpgrade, collectIntoTank, createTank, depositAtHopper, upgradeStats } from './economy';
+import { buyUpgrade, canBuyUpgrade, collectIntoTank, createTank, CREDIT_EPSILON, depositAtHopper, upgradeAvailability, upgradeStats, type UpgradeId } from './economy';
 
 describe('tank and incremental sales', () => {
   it('starts empty with no equipment upgrades', () => {
@@ -45,6 +45,48 @@ describe('tank and incremental sales', () => {
 });
 
 describe('equipment purchases', () => {
+  it('hides prerequisite-gated and fully installed upgrades regardless of funding', () => {
+    const tank = createTank(); tank.credits = 500;
+    expect(upgradeAvailability(tank, 'detectorRange')).toBe('unavailable');
+    expect(upgradeAvailability(tank, 'unknown' as UpgradeId)).toBe('unavailable');
+    expect(buyUpgrade(tank, 'detector')).toBe(true);
+    expect(upgradeAvailability(tank, 'detector')).toBe('unavailable');
+    expect(upgradeAvailability(tank, 'detectorRange')).toBe('available');
+    buyUpgrade(tank, 'detectorRange'); buyUpgrade(tank, 'detectorRange');
+    expect(upgradeAvailability(tank, 'detectorRange')).toBe('unavailable');
+  });
+
+  it('keeps an unlocked upgrade visible when funds are insufficient and reevaluates each level', () => {
+    const tank = createTank();
+    expect(upgradeAvailability(tank, 'digRadius')).toBe('unaffordable');
+    expect(canBuyUpgrade(tank, 'digRadius')).toBe(false);
+    tank.credits = 40;
+    expect(upgradeAvailability(tank, 'digRadius')).toBe('available');
+    expect(canBuyUpgrade(tank, 'digRadius')).toBe(true);
+    expect(buyUpgrade(tank, 'digRadius')).toBe(true);
+    expect(upgradeAvailability(tank, 'digRadius')).toBe('unaffordable');
+    tank.credits = 100;
+    expect(upgradeAvailability(tank, 'digRadius')).toBe('available');
+    buyUpgrade(tank, 'digRadius');
+    expect(upgradeAvailability(tank, 'digRadius')).toBe('unavailable');
+  });
+
+  it('uses the same finite-balance and roundoff tolerance for shop funding and purchases', () => {
+    const tank = createTank();
+    tank.credits = 40 - CREDIT_EPSILON / 2;
+    expect(upgradeAvailability(tank, 'digRadius')).toBe('available');
+    expect(buyUpgrade(tank, 'digRadius')).toBe(true);
+    expect(tank.credits).toBe(0);
+    tank.credits = 100 - CREDIT_EPSILON * 2;
+    expect(upgradeAvailability(tank, 'digRadius')).toBe('unaffordable');
+    expect(canBuyUpgrade(tank, 'digRadius')).toBe(false);
+    for (const credits of [NaN, Infinity, -Infinity]) {
+      tank.credits = credits;
+      expect(upgradeAvailability(tank, 'digRadius')).toBe('unaffordable');
+      expect(buyUpgrade(tank, 'digRadius')).toBe(false);
+    }
+  });
+
   it('charges each level once, caps progression, and preserves carried water', () => {
     const tank = createTank(); tank.water = 10; tank.credits = 59;
     expect(buyUpgrade(tank, 'capacity')).toBe(false);
