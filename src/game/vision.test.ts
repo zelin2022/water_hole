@@ -307,6 +307,51 @@ describe('cave sonar navigating connected open space', () => {
     return world;
   }
 
+  it('reaches equal-radius points together in every direction instead of making a diamond or octagon', () => {
+    const world = undergroundRoom(180, 180), state = createVision(world);
+    const origin = { x: 362, y: 362 };
+    pingSonar(world, state, origin, 0, 240);
+    for (const [dx, dy] of [[200, 0], [0, 200], [120, 160], [160, 120],
+      [-200, 0], [0, -200], [-120, 160], [120, -160], [-160, -120]]) {
+      expect(sonarTravelDistance(world, state, { x: origin.x + dx, y: origin.y + dy })).toBeCloseTo(200, 3);
+    }
+  });
+
+  it('uses the actual pulse origin for a round wave even between cell centres', () => {
+    const world = undergroundRoom(60, 60), state = createVision(world);
+    const origin = { x: 121.1, y: 122.7 };
+    pingSonar(world, state, origin, 0, 100);
+    for (const target of [origin, { x: 122, y: 122 }, { x: 182, y: 162 }, { x: 74, y: 58 }]) {
+      expect(sonarTravelDistance(world, state, target)).toBeCloseTo(Math.hypot(target.x - origin.x, target.y - origin.y), 3);
+    }
+  });
+
+  it('completes long-range scans when travel distances round to Float32 values', () => {
+    const world = new World(80, 80, 32), state = createVision(world);
+    const origin = { x: 1328, y: 1328 };
+    pingSonar(world, state, origin, 0, 900);
+    const isSolid = world.isSolid.bind(world);
+    let checks = 0;
+    // Stop a runaway synchronous search so this regression fails instead of
+    // freezing the test worker, just as the old scan froze a browser frame.
+    world.isSolid = (x, y) => {
+      if (++checks > 500_000) throw new Error('Long-range sonar did not finish its bounded search');
+      return isSolid(x, y);
+    };
+    expect(sonarTravelDistance(world, state, { x: 1808, y: 1968 })).toBeCloseTo(800, 3);
+  });
+
+  it('checks the actual wall face or subcell point before taking an anchor shortcut', () => {
+    const world = new World(12, 12, 4), state = createVision(world);
+    world.setSolid(4, 2, true); world.setSolid(6, 3, true);
+    const origin = { x: 6, y: 7 };
+    pingSonar(world, state, origin, 0, 100);
+    for (const point of [{ x: 26, y: 16 }, { x: 26, y: 16.1 }]) {
+      const direct = Math.hypot(point.x - origin.x, point.y - origin.y);
+      expect(sonarTravelDistance(world, state, point)).toBeGreaterThan(direct + 1);
+    }
+  });
+
   it('does not discover the outline of a sealed water pocket through rock', () => {
     const world = buriedTerrain();
     for (let y = 4; y <= 8; y++) {
@@ -395,14 +440,15 @@ describe('cave sonar navigating connected open space', () => {
     const state = createVision(world);
     pingSonar(world, state, { x: 22, y: 22 }, 0, 100);
     const solidQueries = vi.spyOn(world, 'isSolid');
-    expect(sonarTravelDistance(world, state, { x: 50, y: 50 })).toBe(56);
+    const direct = Math.hypot(28, 28);
+    expect(sonarTravelDistance(world, state, { x: 50, y: 50 })).toBeCloseTo(direct, 3);
     expect(solidQueries.mock.calls.length).toBeGreaterThan(100);
     solidQueries.mockClear();
-    expect(sonarTravelDistance(world, state, { x: 50, y: 50 })).toBe(56);
+    expect(sonarTravelDistance(world, state, { x: 50, y: 50 })).toBeCloseTo(direct, 3);
     expect(solidQueries.mock.calls.length).toBeLessThan(10);
     world.setSolid(10, 10, true);
     solidQueries.mockClear();
-    expect(sonarTravelDistance(world, state, { x: 50, y: 50 })).toBe(56);
+    expect(sonarTravelDistance(world, state, { x: 50, y: 50 })).toBeGreaterThan(direct);
     expect(solidQueries.mock.calls.length).toBeGreaterThan(100);
     solidQueries.mockRestore();
   });
@@ -433,7 +479,7 @@ describe('cave sonar navigating connected open space', () => {
     expect(sonarOpacity(world, state, edge, SONAR_TRAVEL_TIME + 0.25)).toBeGreaterThan(0);
     expect(sonarOpacity(world, state, edge, SONAR_TRAVEL_TIME + 0.25)).toBeLessThan(1);
     expect(sonarOpacity(world, state, edge, SONAR_TRAVEL_TIME + SONAR_OUTLINE_LIFETIME)).toBe(0);
-    expect(sonarOpacity(world, state, { x: 51.5, y: 20 }, SONAR_TRAVEL_TIME + 0.025)).toBe(0);
+    expect(sonarOpacity(world, state, { x: 51.99, y: 20 }, SONAR_TRAVEL_TIME + 0.025)).toBe(0);
     expect(sonarOpacity(world, state, edge, -1)).toBe(0);
   });
 

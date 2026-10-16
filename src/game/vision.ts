@@ -15,7 +15,8 @@ export const MINIMUM_VISIBLE_LIGHT = 0.025;
 export const LAMP_AMBIENT_SUPPRESSION = 0.85;
 
 const daylightCache = new WeakMap<World, { version: number; field: Float32Array }>();
-const sonarDistanceCache = new WeakMap<SonarPulse, WeakMap<World, { version: number; field: Float32Array }>>();
+interface SonarField { version: number; field: Float32Array; parents: Int32Array }
+const sonarDistanceCache = new WeakMap<SonarPulse, WeakMap<World, SonarField>>();
 
 export interface SonarPulse { origin: Point; startedAt: number; maxRadius: number; }
 export interface VisionState {
@@ -138,15 +139,15 @@ export function computeDaylight(world: World): Float32Array {
 }
 
 /** Grid traversal also closes diagonal gaps between touching solid corners. */
-function hasLineOfSight(world: World, origin: Point, targetX: number, targetY: number): boolean {
+function hasLineOfSight(world: World, origin: Point, targetX: number, targetY: number, targetPoint?: Point): boolean {
   const ox = origin.x / world.cellSize;
   const oy = origin.y / world.cellSize;
   let x = Math.floor(ox);
   let y = Math.floor(oy);
   if (!world.inBounds(x, y) || world.isSolid(x, y)) return false;
   if (x === targetX && y === targetY) return true;
-  const dx = targetX + 0.5 - ox;
-  const dy = targetY + 0.5 - oy;
+  const dx = (targetPoint ? targetPoint.x / world.cellSize : targetX + 0.5) - ox;
+  const dy = (targetPoint ? targetPoint.y / world.cellSize : targetY + 0.5) - oy;
   const stepX = Math.sign(dx);
   const stepY = Math.sign(dy);
   const deltaX = dx === 0 ? Infinity : Math.abs(1 / dx);
@@ -269,44 +270,119 @@ export function subsurfaceScannerOpacity(state: VisionState, point: Point, time:
   return pulseOpacity(pulse, Math.hypot(point.x - pulse.origin.x, point.y - pulse.origin.y), time);
 }
 
-function sonarDistances(world: World, pulse: SonarPulse): Float32Array {
+function sonarDistances(world: World, pulse: SonarPulse): SonarField {
   let worlds = sonarDistanceCache.get(pulse);
   if (!worlds) {
     worlds = new WeakMap();
     sonarDistanceCache.set(pulse, worlds);
   }
   const cached = worlds.get(world);
-  if (cached?.version === world.terrainVersion) return cached.field;
+  if (cached?.version === world.terrainVersion) return cached;
 
   const field = new Float32Array(world.solid.length).fill(Infinity);
+  const parents = new Int32Array(field.length).fill(-2);
+  const originVisibility = new Int8Array(field.length);
   const originX = Math.floor(pulse.origin.x / world.cellSize);
   const originY = Math.floor(pulse.origin.y / world.cellSize);
   if (!world.isSolid(originX, originY)) {
-    const queue = new Uint32Array(field.length);
+    // A summed-area table gives an exact cheap visibility proof when the
+    // anchor-to-target rectangle contains no rock. Large open caves otherwise
+    // repeat a long ray traversal for every cell in the circular wave.
+    const reach = Math.ceil(pulse.maxRadius / world.cellSize) + 2;
+    const minX = Math.max(0, originX - reach), maxX = Math.min(world.width - 1, originX + reach);
+    const minY = Math.max(0, originY - reach), maxY = Math.min(world.height - 1, originY + reach);
+    const stride = maxX - minX + 2;
+    const obstacles = new Uint32Array(stride * (maxY - minY + 2));
+    for (let y = minY; y <= maxY; y++) {
+      let row = 0;
+      for (let x = minX; x <= maxX; x++) {
+        row += world.solid[world.index(x, y)];
+        const index = (y - minY + 1) * stride + x - minX + 1;
+        obstacles[index] = obstacles[index - stride] + row;
+      }
+    }
+    const anchorVisible = (anchor: Point, x: number, y: number): boolean => {
+      const ax = Math.floor(anchor.x / world.cellSize), ay = Math.floor(anchor.y / world.cellSize);
+      const left = Math.min(ax, x) - minX, right = Math.max(ax, x) - minX + 1;
+      const top = Math.min(ay, y) - minY, bottom = Math.max(ay, y) - minY + 1;
+      const rocks = obstacles[bottom * stride + right] - obstacles[top * stride + right]
+        - obstacles[bottom * stride + left] + obstacles[top * stride + left];
+      return rocks === 0 || hasLineOfSight(world, anchor, x, y);
+    };
+    // Any-angle propagation keeps straight travel Euclidean instead of counting
+    // horizontal/vertical grid steps. Visible parent anchors also let the wave
+    // bend around rock without cutting through it or through touching corners.
+    const queue: { index: number; distance: number }[] = [];
+    const enqueue = (index: number): void => {
+      const entry = { index, distance: field[index] };
+      let slot = queue.length;
+      queue.push(entry);
+      while (slot > 0) {
+        const parent = (slot - 1) >> 1;
+        if (queue[parent].distance <= entry.distance) break;
+        queue[slot] = queue[parent]; slot = parent;
+      }
+      queue[slot] = entry;
+    };
+    const dequeue = (): { index: number; distance: number } => {
+      const entry = queue[0], last = queue.pop()!;
+      if (queue.length) {
+        let slot = 0;
+        while (slot * 2 + 1 < queue.length) {
+          let child = slot * 2 + 1;
+          if (child + 1 < queue.length && queue[child + 1].distance < queue[child].distance) child++;
+          if (queue[child].distance >= last.distance) break;
+          queue[slot] = queue[child]; slot = child;
+        }
+        queue[slot] = last;
+      }
+      return entry;
+    };
     const originIndex = world.index(originX, originY);
     field[originIndex] = Math.hypot((originX + 0.5) * world.cellSize - pulse.origin.x,
       (originY + 0.5) * world.cellSize - pulse.origin.y);
-    let head = 0;
-    let tail = 1;
-    queue[0] = originIndex;
-    while (head < tail) {
-      const index = queue[head++];
+    // The virtual parent -1 is the actual pulse position, not its cell centre.
+    parents[originIndex] = -1;
+    enqueue(originIndex);
+    while (queue.length) {
+      const { index, distance } = dequeue();
+      if (distance !== field[index]) continue;
       const x = index % world.width;
       const y = Math.floor(index / world.width);
-      const distance = field[index] + world.cellSize;
       // Keep one cell of margin so an edge just inside the range can be queried.
       if (distance > pulse.maxRadius + world.cellSize) continue;
-      for (const [nx, ny] of [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]) {
+      const parent = parents[index];
+      const anchor = parent < 0 ? pulse.origin : {
+        x: (parent % world.width + 0.5) * world.cellSize,
+        y: (Math.floor(parent / world.width) + 0.5) * world.cellSize,
+      };
+      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        const nx = x + dx, ny = y + dy;
         if (world.isSolid(nx, ny)) continue;
+        if (dx && dy && (world.isSolid(x + dx, y) || world.isSolid(x, y + dy))) continue;
         const neighbour = world.index(nx, ny);
-        if (field[neighbour] !== Infinity) continue;
-        field[neighbour] = distance;
-        queue[tail++] = neighbour;
+        let visible: boolean;
+        if (parent < 0) {
+          if (!originVisibility[neighbour]) originVisibility[neighbour] = anchorVisible(anchor, nx, ny) ? 1 : -1;
+          visible = originVisibility[neighbour] === 1;
+        } else visible = anchorVisible(anchor, nx, ny);
+        const nextParent = visible ? parent : index;
+        const candidate = visible
+          ? (parent < 0 ? 0 : field[parent]) + Math.hypot((nx + 0.5) * world.cellSize - anchor.x, (ny + 0.5) * world.cellSize - anchor.y)
+          : distance + world.cellSize * (dx && dy ? Math.SQRT2 : 1);
+        // Compare the value that will actually be stored. A double can be
+        // smaller yet round to the same Float32, endlessly requeuing a node.
+        const storedDistance = Math.fround(candidate);
+        if (candidate > pulse.maxRadius + world.cellSize || storedDistance >= field[neighbour]) continue;
+        field[neighbour] = storedDistance;
+        parents[neighbour] = nextParent;
+        enqueue(neighbour);
       }
     }
   }
-  worlds.set(world, { version: world.terrainVersion, field });
-  return field;
+  const result = { version: world.terrainVersion, field, parents };
+  worlds.set(world, result);
+  return result;
 }
 
 /** Accept only the first solid/open face, never a solid cell's opposite face. */
@@ -326,21 +402,31 @@ function boundaryOpenCell(world: World, point: Point): number {
   return aSolid ? world.index(bx, by) : world.index(ax, ay);
 }
 
-/** Shortest open-grid route, also usable to draw a wavefront inside tunnels. */
+/** Any-angle open-space travel, also usable to draw a round wave inside tunnels. */
 export function sonarTravelDistance(world: World, state: VisionState, point: Point): number {
   const pulse = state.sonar;
   if (!pulse || ![point.x, point.y].every(Number.isFinite)
     || point.x < 0 || point.y < 0
     || point.x >= world.width * world.cellSize || point.y >= world.height * world.cellSize) return Infinity;
-  const field = sonarDistances(world, pulse);
+  const { field, parents } = sonarDistances(world, pulse);
   const boundary = boundaryOpenCell(world, point);
   const x = Math.floor(point.x / world.cellSize);
   const y = Math.floor(point.y / world.cellSize);
   const index = boundary >= 0 ? boundary : world.isSolid(x, y) ? -1 : world.index(x, y);
-  if (index < 0) return Infinity;
+  if (index < 0 || !Number.isFinite(field[index])) return Infinity;
+  const parent = parents[index];
+  const anchorX = parent < 0 ? pulse.origin.x : (parent % world.width + 0.5) * world.cellSize;
+  const anchorY = parent < 0 ? pulse.origin.y : (Math.floor(parent / world.width) + 0.5) * world.cellSize;
+  let distance = (parent < 0 ? 0 : field[parent]) + Math.hypot(point.x - anchorX, point.y - anchorY);
   const centerX = (index % world.width + 0.5) * world.cellSize;
   const centerY = (Math.floor(index / world.width) + 0.5) * world.cellSize;
-  const distance = field[index] + Math.hypot(point.x - centerX, point.y - centerY);
+  if ((point.x !== centerX || point.y !== centerY)
+    && !hasLineOfSight(world, { x: anchorX, y: anchorY }, index % world.width, Math.floor(index / world.width), {
+      // A face belongs to its open neighbour. Nudge the endpoint inward so
+      // traversing to that face cannot accidentally choose the solid side.
+      x: point.x + (centerX - point.x) * 1e-7,
+      y: point.y + (centerY - point.y) * 1e-7,
+    })) distance = field[index] + Math.hypot(point.x - centerX, point.y - centerY);
   return distance <= pulse.maxRadius ? distance : Infinity;
 }
 

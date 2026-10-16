@@ -8,7 +8,7 @@ import { AudioEngine } from './audio';
 import { Renderer } from './render';
 import { DevPanel } from './dev-panel';
 import { DEFAULT_STEP_HEIGHT_CELLS } from './game/player';
-import type { WaterDistribution } from './game/generation';
+import { DEFAULT_WATER_DISTRIBUTION, type WaterDistribution } from './game/generation';
 
 declare global {
   interface Window { waterHoleDesktop?: { setDisplay(options: { fullscreen: boolean; width: number; height: number }): Promise<void>; quit(): void } }
@@ -116,10 +116,12 @@ function renderPanel(): void {
       <div class="menu-stack">${hasRun && !session.completed ? button('resume', 'Resume expedition', true) : ''}${button('new', 'New game', !hasRun || session.completed)}${button('load', 'Continue saved game', false, !saved)}${button('settings', 'Settings')}${window.waterHoleDesktop ? button('quit', 'Quit') : ''}</div><p class="small-note">A finite site. A pickaxe. A water exchange.</p>`; break;
     case 'new': el('panel').innerHTML = `${heading('NEW EXPEDITION', 'Choose your site', 'Choose a seed and compare water-pocket layouts. Your choice stays with this save.')}
       <form id="new-form"><label class="setting-row">Site seed<input id="site-seed" type="number" min="0" max="4294967295" step="1" value="${crypto.getRandomValues(new Uint32Array(1))[0]}"></label>
-      <label class="setting-row">Water pockets<select id="water-distribution"><option value="depth-weighted">Three sizes / depth weighted</option><option value="many-small">Legacy / many small</option><option value="fewer-large">Legacy / fewer large</option></select></label>
+      <label class="setting-row">Water pockets<select id="water-distribution"><option value="depth-weighted">Three sizes / depth weighted (default)</option><option value="many-small">Legacy / many small</option><option value="fewer-large">Legacy / fewer large</option></select></label>
       <p class="small-note">The default layout has three pocket sizes at every depth, with larger finds becoming more common deeper down. Some pockets are dry. Legacy layouts remain available for comparison.</p>
       ${DEV_TOOLS_ENABLED ? '<label class="setting-row">Full visibility for testing<input id="debug-vision" type="checkbox"></label>' : ''}
-      <div class="panel-actions"><button type="submit" class="primary-button">Begin expedition</button>${button('back-home', 'Back')}</div></form><p class="small-note">A new expedition replaces the single saved game after confirmation.</p>`; break;
+      <div class="panel-actions"><button type="submit" class="primary-button">Begin expedition</button>${button('back-home', 'Back')}</div></form><p class="small-note">A new expedition replaces the single saved game after confirmation.</p>`;
+      el<HTMLSelectElement>('water-distribution').value = DEFAULT_WATER_DISTRIBUTION;
+      break;
     case 'confirm': el('panel').innerHTML = `${heading('START OVER', 'Replace this expedition?', 'Starting a new game replaces your current expedition and saved game.')}<div class="panel-actions">${button('confirm-new', 'Start new expedition', true)}${button('cancel-new', 'Keep current expedition')}</div>`; break;
     case 'pause': el('panel').innerHTML = `${heading('EXPEDITION PAUSED', 'Take a breather', 'Terrain, water, and equipment are paused.')}<div class="menu-stack">${button('resume', 'Resume', true)}${button('save', 'Save game')}${button('load', 'Load saved game', false, !saved)}${button('settings', 'Settings')}${button('home', 'Save & return to menu')}${window.waterHoleDesktop ? button('quit', 'Save & quit') : ''}</div>`; break;
     case 'shop': renderShop(); break;
