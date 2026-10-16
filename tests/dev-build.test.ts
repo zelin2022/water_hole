@@ -33,7 +33,7 @@ describe('developer tools build flag', () => {
     };
     const provisional = await compiledJavaScript('production');
     const release = await compiledJavaScript('release');
-    for (const marker of ['dev-credits-form', 'dev-omni-vision', 'data-dev-teleport', 'Teleport to hopper', 'Backquote']) {
+    for (const marker of ['dev-credits-form', 'dev-omni-vision', 'data-dev-teleport', 'Teleport to hopper', 'data-dev-end', 'Warp to demo end', 'Backquote']) {
       expect(provisional).toContain(marker);
       expect(release).not.toContain(marker);
     }

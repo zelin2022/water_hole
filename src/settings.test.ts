@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, readSettings, rebind } from './settings';
 
 describe('player settings', () => {
+  it('provides a rebindable bug-report shortcut and restores it in older preferences', () => {
+    expect(DEFAULT_SETTINGS.bindings.report).toBe('F8');
+    const { report: _report, ...legacy } = DEFAULT_SETTINGS.bindings;
+    expect(readSettings(JSON.stringify({ bindings: { ...legacy, jump: 'KeyJ' } })).bindings.report).toBe('F8');
+    expect(readSettings(JSON.stringify({ bindings: { ...legacy, jump: 'KeyJ' } })).bindings.jump).toBe('KeyJ');
+    const bindings = { ...DEFAULT_SETTINGS.bindings };
+    expect(rebind(bindings, 'report', 'F9')).toBe(true);
+    expect(readSettings(JSON.stringify({ bindings })).bindings.report).toBe('F9');
+  });
   it('reserves Escape for pause and menu navigation even when pause is rebound', () => {
     const bindings = { ...DEFAULT_SETTINGS.bindings, pause: 'KeyP' };
     expect(rebind(bindings, 'dig', 'Escape')).toBe(false);

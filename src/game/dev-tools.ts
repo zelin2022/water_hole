@@ -1,4 +1,5 @@
 import { HOPPER_RANGE, type Session } from './session';
+import { totalWater } from './water';
 
 export const MAX_DEV_CREDITS = 1_000_000_000;
 
@@ -14,6 +15,32 @@ export function setDevCredits(session: Session, amount: number): boolean {
 export function setOmniVision(session: Session, enabled: boolean): boolean {
   if (session.completed || typeof enabled !== 'boolean') return false;
   session.options.debugVision = enabled;
+  return true;
+}
+
+/** Exercise the real ending using existing water, keeping saved resource ledgers valid. */
+export function warpToDemoEnd(session: Session): boolean {
+  if (session.completed) return false;
+  const needed = session.deliveryLimit - session.delivered;
+  const available = totalWater(session.world) + session.tank.water;
+  if (!Number.isFinite(needed) || needed <= 0 || !Number.isFinite(available) || available < needed) return false;
+
+  // Check the whole transfer first: a depleted debug fixture must remain untouched.
+  const fromTank = Math.min(session.tank.water, needed);
+  session.tank.water -= fromTank;
+  let remaining = needed - fromTank;
+  for (let index = 0; index < session.world.water.length && remaining > 0; index++) {
+    const amount = Math.min(remaining, session.world.water[index]);
+    session.world.water[index] -= amount;
+    remaining -= amount;
+  }
+  session.delivered = session.deliveryLimit;
+  session.tank.credits += needed;
+  session.completed = true;
+  session.digCooldown = 0;
+  session.strikeTime = -1;
+  session.lastStrike = null;
+  session.unloading = false;
   return true;
 }
 

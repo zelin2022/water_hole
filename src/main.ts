@@ -10,6 +10,8 @@ import { DevPanel } from './dev-panel';
 import { DEFAULT_STEP_HEIGHT_CELLS } from './game/player';
 import { APP_VERSION, DEMO_LABEL, FEEDBACK_URL, STORE_URL } from './release-info';
 import { formatBugReport } from './reporting';
+import { captureGameScreenshot, createSubmission, normalizeFeedbackEndpoint, readBugDraft, sendFeedback, type BugReportDraft } from './report-client';
+import { requestFeedbackVerification } from './feedback-verification';
 
 declare global {
   interface Window { waterHoleDesktop?: { setDisplay(options: { fullscreen: boolean; width: number; height: number }): Promise<void>; quit(): void; openExternal(url: string): Promise<void> } }
@@ -18,6 +20,9 @@ const DEV_TOOLS_ENABLED = import.meta.env.VITE_DEV_TOOLS === 'true';
 type Screen = 'home' | 'new' | 'playing' | 'pause' | 'shop' | 'settings' | 'confirm' | 'ended' | 'dev' | 'support' | 'credits';
 const SAVE_KEY = 'water-hole.demo.save.v1';
 const SETTINGS_KEY = 'water-hole.settings.v1';
+const REPORT_DRAFT_KEY = 'water-hole.bug-draft.v1';
+const SURVEY_DRAFT_KEY = 'water-hole.survey-draft.v1';
+const FEEDBACK_API_URL = normalizeFeedbackEndpoint(import.meta.env.VITE_FEEDBACK_API_URL);
 const app = document.querySelector<HTMLElement>('#app')!;
 app.innerHTML = `
   <header class="topbar">
@@ -46,7 +51,11 @@ let screen: Screen = 'home';
 let settingsReturn: Screen = 'home';
 let supportReturn: Screen = 'home';
 let creditsReturn: Screen = 'home';
-let reportDraft: string | null = null;
+let reportDraft: BugReportDraft | null = readBugDraft(read(REPORT_DRAFT_KEY));
+let surveyDraft = readSurveyDraft();
+let sendingFeedback = false;
+let feedbackStatus = '';
+let surveyStatus = '';
 let devReturn: 'playing' | 'pause' | 'shop' = 'playing';
 let hasRun = false;
 let pendingNew: SessionOptions = {};
@@ -67,6 +76,7 @@ const devPanel = DEV_TOOLS_ENABLED ? new DevPanel(el('panel'), {
     clearInput(); pointer.active = false;
     const centre = playerCenter(session); aim = { x: centre.x + session.facing * 80, y: centre.y };
     lastVisionAt = -1; updateHUD(); saveRun(false);
+    if (session.completed) changeScreen('ended');
   },
   close: () => changeScreen(devReturn),
 }) : null;
@@ -82,7 +92,6 @@ function saveRun(notify = true): boolean {
   catch { if (notify) notice('Could not save. Local storage may be full or unavailable.'); return false; }
 }
 function restore(next: Session): void {
-  reportDraft = null;
   next.options.stepHeightCells = DEFAULT_STEP_HEIGHT_CELLS;
   if (!DEV_TOOLS_ENABLED) {
     next.options.debugVision = false;
@@ -107,7 +116,8 @@ function saveSettings(): void {
 function heading(eyebrow: string, title: string, text = ''): string { return `<span class="eyebrow">${eyebrow}</span><h1>${title}</h1>${text ? `<p class="panel-intro">${text}</p>` : ''}`; }
 function button(action: string, label: string, primary = false, disabled = false): string { return `<button type="button" data-action="${action}" class="${primary ? 'primary-button' : 'menu-button'}" ${disabled ? 'disabled' : ''}>${label}</button>`; }
 function changeScreen(next: Screen): void {
-  if (screen === 'support') reportDraft = el<HTMLTextAreaElement>('bug-report').value;
+  if (screen === 'support') storeReportDraft();
+  if (screen === 'ended') storeSurveyDraft();
   clearInput(); bindingAction = null; screen = next; el('overlay').hidden = next === 'playing';
   audio.setActive(!['pause', 'settings', 'dev', 'support', 'credits'].includes(next)); renderPanel();
   updateHUD();
@@ -131,12 +141,97 @@ function renderPanel(): void {
     case 'support': renderSupport(); break;
     case 'credits': el('panel').innerHTML = `${heading('WATER HOLE', 'Credits')}<dl class="credit-list"><dt>Created by</dt><dd>zelin2022</dd><dt>Visuals & sound</dt><dd>Procedural artwork and original synthesized music and sound effects.</dd><dt>Runtime</dt><dd>Electron and Chromium. Third-party license notices are included with the desktop application.</dd></dl><p class="small-note">${DEMO_LABEL}</p><div class="panel-actions">${button('credits-back', 'Back', true)}</div>`; break;
     case 'dev': if (DEV_TOOLS_ENABLED) el('panel').innerHTML = devPanel!.render(); break;
-    case 'ended': el('panel').innerHTML = `${heading('WATER HOLE', 'Thanks for playing<br>the demo.', 'You have reached the end of this demo. Thanks for spending some time underground.')}<div class="panel-actions">${button('support', 'Feedback / report a bug', true)}${STORE_URL ? button('store', 'Wishlist on Steam') : ''}${button('new', 'New expedition')}${button('home', 'Main menu')}${window.waterHoleDesktop ? button('quit', 'Quit') : ''}</div>`; break;
+    case 'ended': renderEnding(); break;
   }
 }
 function renderSupport(): void {
-  el('panel').innerHTML = `${heading('FEEDBACK / BUG REPORT', 'Help improve the next expedition', 'Describe what happened below. The report includes your site seed, equipment, and demo version so an issue can be reproduced.')}<label class="report-label" for="bug-report">Your report</label><textarea id="bug-report" rows="12" spellcheck="false"></textarea><div class="panel-actions">${button('copy-report', 'Copy report', true)}${button('download-report', 'Download report')}${hasRun ? button('download-save', 'Download save') : ''}${FEEDBACK_URL ? button('feedback-page', 'Open feedback page') : ''}</div><p class="small-note">${FEEDBACK_URL ? 'Open the feedback page to send your report. You can attach an exported save if it helps explain the issue.' : 'The feedback channel is being prepared. You can copy or download a report below.'} Nothing is sent automatically.</p><div class="panel-actions">${button('support-back', 'Back')}</div>`;
-  el<HTMLTextAreaElement>('bug-report').value = reportDraft ?? formatBugReport(hasRun ? session : null, navigator.platform);
+  reportDraft ??= { description: '', diagnostics: gameDiagnostics(), screenshot: null, submissionId: crypto.randomUUID() };
+  el('panel').innerHTML = `${heading('BUG REPORT', 'What happened underground?', 'Describe the issue and what you were doing. Your game is paused while you write.')}<label class="report-label" for="bug-description">What happened?</label><textarea id="bug-description" class="feedback-text" rows="4" maxlength="10000" placeholder="What went wrong? How can we reproduce it?"></textarea>
+    ${reportDraft.screenshot ? `<figure class="report-screenshot"><img id="report-screenshot" alt="Game screenshot captured when this report was opened"><figcaption><span>Only the game view is captured.</span>${button('remove-screenshot', 'Remove screenshot')}${button('download-screenshot', 'Download screenshot')}</figcaption></figure>` : '<p class="small-note screenshot-note">No screenshot attached. You can send a text report.</p>'}
+    <details class="report-details"><summary>Game details included with this report</summary><label class="report-label" for="bug-report">Game details</label><textarea id="bug-report" rows="8" maxlength="16000" spellcheck="false"></textarea></details>
+    <div class="panel-actions">${button('send-report', sendingFeedback ? 'Sending…' : 'Send bug report', true, !FEEDBACK_API_URL || sendingFeedback)}${button('copy-report', 'Copy report')}${button('download-report', 'Download report')}${hasRun ? button('download-save', 'Download save') : ''}${FEEDBACK_URL ? button('feedback-page', 'Open feedback page') : ''}</div>
+    <p class="feedback-status" id="report-status" role="status" aria-live="polite"></p><p class="small-note">${FEEDBACK_API_URL ? 'Sending asks you to complete a human check. Your message, game details, and attached screenshot are sent only when you choose Send.' : 'Online reporting is not connected yet. Your draft stays on this device; you can copy or download it.'} No custom image uploads.</p><div class="panel-actions">${button('support-back', 'Back')}</div>`;
+  el<HTMLTextAreaElement>('bug-description').value = reportDraft.description;
+  el<HTMLTextAreaElement>('bug-report').value = reportDraft.diagnostics;
+  el('report-status').textContent = feedbackStatus;
+  if (reportDraft.screenshot) el<HTMLImageElement>('report-screenshot').src = `data:image/png;base64,${reportDraft.screenshot.data}`;
+}
+function gameDiagnostics(): string { return `${formatBugReport(hasRun ? session : null, navigator.platform)}\nBuild: ${DEV_TOOLS_ENABLED ? 'Development tools enabled' : 'Release'}`; }
+function openBugReport(captureCurrent = true): void {
+  if (sendingFeedback) return;
+  if (captureCurrent || !reportDraft || !reportDraft.description.trim()) {
+    const screenshot = hasRun ? captureGameScreenshot(canvas) : null;
+    reportDraft = { description: reportDraft?.description ?? '', diagnostics: gameDiagnostics(), screenshot,
+      submissionId: crypto.randomUUID() };
+    feedbackStatus = hasRun && !screenshot ? 'The screenshot could not be captured. Your text report still works.' : '';
+  }
+  supportReturn = screen; changeScreen('support'); storeReportDraft();
+  el<HTMLTextAreaElement>('bug-description').focus();
+}
+function storeReportDraft(): void {
+  if (!reportDraft) return;
+  if (screen === 'support') {
+    reportDraft.description = el<HTMLTextAreaElement>('bug-description').value;
+    reportDraft.diagnostics = el<HTMLTextAreaElement>('bug-report').value;
+  }
+  try { localStorage.setItem(REPORT_DRAFT_KEY, JSON.stringify(reportDraft)); }
+  catch { feedbackStatus = 'The draft cannot be stored on this device. Copy or download it before closing the game.'; }
+}
+function bugReportText(): string { storeReportDraft(); return `${reportDraft?.description ?? ''}\n\n${reportDraft?.diagnostics ?? gameDiagnostics()}`; }
+function readSurveyDraft(): { rating: number; suggestions: string; submissionId: string } {
+  try {
+    const saved = JSON.parse(read(SURVEY_DRAFT_KEY) ?? 'null');
+    if (saved && Number.isInteger(saved.rating) && saved.rating >= 0 && saved.rating <= 5 && typeof saved.suggestions === 'string' && saved.suggestions.length <= 10000) {
+      return { rating: saved.rating, suggestions: saved.suggestions, submissionId: typeof saved.submissionId === 'string' ? saved.submissionId : crypto.randomUUID() };
+    }
+  } catch { /* A corrupt local draft must not block the ending. */ }
+  return { rating: 0, suggestions: '', submissionId: crypto.randomUUID() };
+}
+function storeSurveyDraft(): void {
+  if (screen === 'ended') surveyDraft.suggestions = el<HTMLTextAreaElement>('survey-suggestions').value;
+  try { localStorage.setItem(SURVEY_DRAFT_KEY, JSON.stringify(surveyDraft)); }
+  catch { surveyStatus = 'The draft cannot be stored on this device. Copy or download it before closing the game.'; }
+}
+function renderEnding(): void {
+  el('panel').innerHTML = `${heading('WATER HOLE / DEMO COMPLETE', 'Congratulations!<br>You beat the demo.', 'Thanks for spending some time underground. How was your expedition?')}
+    <div class="survey-rating" role="radiogroup" aria-label="Rate the demo from one to five stars">${[1, 2, 3, 4, 5].map(rating => `<button type="button" role="radio" aria-checked="${surveyDraft.rating === rating}" aria-label="${rating} ${rating === 1 ? 'star' : 'stars'}" tabindex="${rating === (surveyDraft.rating || 1) ? 0 : -1}" data-rating="${rating}" class="star-button ${rating <= surveyDraft.rating ? 'selected' : ''}">★</button>`).join('')}<span id="rating-label">${surveyDraft.rating ? `${surveyDraft.rating} / 5` : 'Choose a rating'}</span></div>
+    <label class="report-label" for="survey-suggestions">Any suggestions? <span class="optional-note">Optional</span></label><textarea id="survey-suggestions" class="feedback-text" maxlength="10000" rows="3" placeholder="What did you enjoy? What would you change?"></textarea>
+    <div class="panel-actions">${button('send-survey', sendingFeedback ? 'Sending…' : 'Send feedback', true, !FEEDBACK_API_URL || sendingFeedback)}${button('copy-survey', 'Copy feedback')}${button('download-survey', 'Download feedback')}</div><p id="survey-status" class="feedback-status" role="status" aria-live="polite"></p><p class="small-note">${FEEDBACK_API_URL ? 'Feedback is optional. Sending opens a human check and includes your demo version and game details.' : 'Online feedback is not connected yet. Your rating and suggestions stay on this device; you can copy or download them.'}</p>
+    <div class="panel-actions ending-actions">${button('support', 'Feedback / report a bug')}${STORE_URL ? button('store', 'Wishlist on Steam') : ''}${button('new', 'New expedition')}${button('home', 'Main menu')}${window.waterHoleDesktop ? button('quit', 'Quit') : ''}</div>`;
+  el<HTMLTextAreaElement>('survey-suggestions').value = surveyDraft.suggestions;
+  el('survey-status').textContent = surveyStatus;
+}
+function surveyText(): string { storeSurveyDraft(); return `Water Hole demo feedback\nRating: ${surveyDraft.rating || 'Unrated'} / 5 stars\n\n${surveyDraft.suggestions}\n\n${gameDiagnostics()}`; }
+function selectSurveyRating(rating: number): void {
+  storeSurveyDraft(); surveyDraft.rating = rating; surveyDraft.submissionId = crypto.randomUUID(); storeSurveyDraft();
+  setFeedbackStatus('survey', '');
+  for (const star of el('panel').querySelectorAll<HTMLButtonElement>('[data-rating]')) {
+    const value = Number(star.dataset.rating);
+    star.setAttribute('aria-checked', String(value === rating)); star.tabIndex = value === rating ? 0 : -1;
+    star.classList.toggle('selected', value <= rating);
+    if (value === rating) star.focus();
+  }
+  el('rating-label').textContent = `${rating} / 5`;
+}
+async function submitFeedback(kind: 'bug' | 'survey'): Promise<void> {
+  if (sendingFeedback || !FEEDBACK_API_URL) return;
+  storeReportDraft(); storeSurveyDraft();
+  let payload;
+  try { payload = createSubmission(kind === 'bug' ? { kind, ...reportDraft! } : { kind, description: surveyDraft.suggestions,
+    diagnostics: gameDiagnostics(), rating: surveyDraft.rating, submissionId: surveyDraft.submissionId }); }
+  catch (error) { setFeedbackStatus(kind, error instanceof Error ? error.message : 'Check your feedback and try again.'); return; }
+  sendingFeedback = true; setFeedbackStatus(kind, 'Complete the human check to send your feedback.'); renderPanel();
+  try {
+    payload.challengeToken = await requestFeedbackVerification(FEEDBACK_API_URL, kind);
+    setFeedbackStatus(kind, 'Sending your feedback…');
+    await sendFeedback(FEEDBACK_API_URL, payload);
+    setFeedbackStatus(kind, 'Thanks! Your feedback was received.');
+  } catch (error) { setFeedbackStatus(kind, error instanceof Error ? error.message : 'Could not send. Your draft is kept.'); }
+  finally { sendingFeedback = false; if (screen === 'support' || screen === 'ended') renderPanel(); }
+}
+function setFeedbackStatus(kind: 'bug' | 'survey', message: string): void {
+  if (kind === 'bug') { feedbackStatus = message; if (screen === 'support') el('report-status').textContent = message; }
+  else { surveyStatus = message; if (screen === 'ended') el('survey-status').textContent = message; }
 }
 function downloadText(name: string, text: string, type: string): void {
   const url = URL.createObjectURL(new Blob([text], { type }));
@@ -145,7 +240,7 @@ function downloadText(name: string, text: string, type: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 async function copyReport(): Promise<void> {
-  try { await navigator.clipboard.writeText(el<HTMLTextAreaElement>('bug-report').value); notice('Report copied.'); }
+  try { await navigator.clipboard.writeText(bugReportText()); notice('Report copied.'); }
   catch { notice('Could not copy. Download the report, or select its text and copy it.'); }
 }
 async function openReleaseLink(url: string | null): Promise<void> {
@@ -205,7 +300,7 @@ async function applyDisplay(): Promise<void> {
   } catch { notice('This display mode could not be applied.'); }
 }
 function renderControls(): void {
-  const hints: [Action, string][] = [['left', 'Move'], ['up', 'Climb'], ['jump', session.tank.upgrades.doubleJump ? 'Jump / air jump' : 'Jump'], ['dig', 'Strike'], ['collect', 'Collect'], ['unload', 'Unload'], ['shop', 'Shop'], ['sonar', 'Sonar']];
+  const hints: [Action, string][] = [['left', 'Move'], ['up', 'Climb'], ['jump', session.tank.upgrades.doubleJump ? 'Jump / air jump' : 'Jump'], ['dig', 'Strike'], ['collect', 'Collect'], ['unload', 'Unload'], ['shop', 'Shop'], ['sonar', 'Sonar'], ['report', 'Report bug']];
   el('controls').innerHTML = hints.map(([action, label]) => `<span><kbd>${keyLabel(settings.bindings[action])}${action === 'left' ? ` / ${keyLabel(settings.bindings.right)}` : action === 'up' ? ` / ${keyLabel(settings.bindings.down)}` : ''}</kbd>${label}</span>`).join('');
   if (DEV_TOOLS_ENABLED) el('controls').insertAdjacentHTML('beforeend', '<span><kbd>&#96;</kbd>Dev panel</span>');
   el('menu').innerHTML = `Menu <kbd>${keyLabel(settings.bindings.pause)}</kbd>`;
@@ -221,6 +316,10 @@ el('panel').addEventListener('submit', event => {
 el('panel').addEventListener('click', event => {
   const target = (event.target as HTMLElement).closest<HTMLButtonElement>('button'); if (!target || target.disabled) return;
   void audio.unlock().catch(() => {}); audio.play('menu');
+  if (target.dataset.rating) {
+    if (screen !== 'ended' || sendingFeedback) return;
+    selectSurveyRating(Number(target.dataset.rating)); return;
+  }
   if (target.dataset.binding) { bindingAction = target.dataset.binding as Action; target.textContent = 'Press input…'; return; }
   if (target.dataset.purchase) {
     if (screen === 'shop' && nearHopper(session) && buyUpgrade(session.tank, target.dataset.purchase as UpgradeId)) { audio.play('buy'); lastVisionAt = -1; saveRun(false); renderShop(); renderControls(); updateHUD(); }
@@ -237,12 +336,21 @@ el('panel').addEventListener('click', event => {
     case 'home': if (hasRun && !saveRun()) return; changeScreen('home'); break;
     case 'settings': settingsReturn = screen; changeScreen('settings'); break;
     case 'settings-back': changeScreen(settingsReturn); break;
-    case 'support': supportReturn = screen; changeScreen('support'); break;
+    case 'support': openBugReport(false); break;
     case 'support-back': changeScreen(supportReturn); break;
     case 'credits': creditsReturn = screen; changeScreen('credits'); break;
     case 'credits-back': changeScreen(creditsReturn); break;
     case 'copy-report': void copyReport(); break;
-    case 'download-report': downloadText(`water-hole-report-v${APP_VERSION}.txt`, el<HTMLTextAreaElement>('bug-report').value, 'text/plain;charset=utf-8'); break;
+    case 'download-report': downloadText(`water-hole-report-v${APP_VERSION}.txt`, bugReportText(), 'text/plain;charset=utf-8'); break;
+    case 'remove-screenshot': if (reportDraft) { storeReportDraft(); reportDraft.screenshot = null; reportDraft.submissionId = crypto.randomUUID(); feedbackStatus = ''; storeReportDraft(); renderSupport(); } break;
+    case 'download-screenshot': if (reportDraft?.screenshot) {
+      const link = document.createElement('a'); link.href = `data:image/png;base64,${reportDraft.screenshot.data}`; link.download = `water-hole-screenshot-v${APP_VERSION}.png`;
+      document.body.append(link); link.click(); link.remove();
+    } break;
+    case 'send-report': void submitFeedback('bug'); break;
+    case 'send-survey': void submitFeedback('survey'); break;
+    case 'copy-survey': void navigator.clipboard.writeText(surveyText()).then(() => notice('Feedback copied.'), () => notice('Could not copy. Download your feedback instead.')); break;
+    case 'download-survey': downloadText(`water-hole-feedback-v${APP_VERSION}.txt`, surveyText(), 'text/plain;charset=utf-8'); break;
     case 'download-save': if (hasRun) { syncSonar(); downloadText(`water-hole-save-${session.seed}-v${APP_VERSION}.json`, serializeSession(session), 'application/json'); } break;
     case 'feedback-page': void openReleaseLink(FEEDBACK_URL); break;
     case 'store': void openReleaseLink(STORE_URL); break;
@@ -253,6 +361,8 @@ el('panel').addEventListener('click', event => {
 });
 el('panel').addEventListener('input', event => {
   const target = event.target as HTMLInputElement;
+  if (target.id === 'bug-description' || target.id === 'bug-report') { if (reportDraft) reportDraft.submissionId = crypto.randomUUID(); setFeedbackStatus('bug', ''); storeReportDraft(); }
+  if (target.id === 'survey-suggestions') { surveyDraft.submissionId = crypto.randomUUID(); setFeedbackStatus('survey', ''); storeSurveyDraft(); }
   if (target.id === 'music-volume') { settings.music = Number(target.value); saveSettings(); }
   if (target.id === 'sfx-volume') { settings.sfx = Number(target.value); saveSettings(); }
 });
@@ -269,9 +379,24 @@ window.addEventListener('keydown', event => {
   void audio.unlock().catch(() => {});
   if (bindingAction) { event.preventDefault(); captureBinding(event.code); return; }
   if ((event.ctrlKey && event.code !== 'ControlLeft') || event.metaKey || event.altKey) return;
+  if (sendingFeedback) return;
   if (screen === 'support' || screen === 'credits') {
     if (event.code === 'Escape' && !event.repeat) { event.preventDefault(); changeScreen(screen === 'support' ? supportReturn : creditsReturn); }
     return;
+  }
+  if (screen === 'ended') {
+    if (event.target instanceof HTMLButtonElement && event.target.dataset.rating
+      && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.code)) {
+      event.preventDefault();
+      const previous = Number(event.target.dataset.rating);
+      const rating = event.code === 'Home' ? 1 : event.code === 'End' ? 5
+        : ((previous - 1 + (event.code === 'ArrowLeft' || event.code === 'ArrowUp' ? 4 : 1)) % 5) + 1;
+      selectSurveyRating(rating);
+    }
+    return;
+  }
+  if (event.code === settings.bindings.report && hasRun && (screen === 'playing' || screen === 'pause' || screen === 'shop')) {
+    event.preventDefault(); if (!event.repeat) openBugReport(); return;
   }
   if (DEV_TOOLS_ENABLED && event.code === 'Backquote') {
     if (screen === 'dev') { event.preventDefault(); if (!event.repeat) changeScreen(devReturn); }
@@ -307,6 +432,7 @@ canvas.addEventListener('pointerdown', event => {
   event.preventDefault(); canvas.focus({ preventScroll: true }); pointer = { x: event.clientX, y: event.clientY, active: true };
   const code = `Mouse${event.button}`; held.add(code);
   const action = (Object.keys(ACTION_LABELS) as Action[]).find(value => settings.bindings[value] === code);
+  if (action === 'report') { openBugReport(); return; }
   if (action === 'shop') { if (nearHopper(session)) changeScreen('shop'); } else if (action === 'pause') pause(); else if (action) pressed.add(action);
   canvas.setPointerCapture(event.pointerId);
 });

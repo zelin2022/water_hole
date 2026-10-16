@@ -1,6 +1,6 @@
 {
   "name": "water-hole",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "private": true,
   "description": "A finite excavation and water collection game demo.",
   "type": "module",
@@ -12,7 +12,7 @@
     "build": "tsc --noEmit && vite build",
     "build:release": "tsc --noEmit && vite build --mode release",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "vitest run && npm run test:desktop",
+    "test": "vitest run && npm run test:desktop && npm run test:feedback",
     "test:watch": "vitest",
     "package:win": "npm run build && node scripts/package.mjs win32 x64",
     "package:mac": "npm run build && node scripts/package.mjs darwin arm64",
@@ -21,6 +21,9 @@
     "package:mac:release": "npm run build:release && node scripts/package.mjs darwin arm64",
     "package:mac:x64:release": "npm run build:release && node scripts/package.mjs darwin x64",
     "test:desktop": "node --test tests/desktop-contract.cjs",
+    "test:feedback": "node --test feedback-server/test/*.check.mjs",
+    "feedback:start": "node feedback-server/start.mjs",
+    "feedback:admin": "node feedback-server/admin.mjs",
     "benchmark": "node scripts/benchmark.mjs",
     "audit:economy": "node scripts/economy-audit.mjs"
   },

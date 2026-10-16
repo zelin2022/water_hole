@@ -3,8 +3,9 @@ import { buyUpgrade, depositAtHopper } from './economy';
 import { createSession, DEMO_DELIVERY_LIMIT, nearHopper, stepSession, type GameInput, type Session } from './session';
 import { totalWater } from './water';
 import { World } from './world';
+import { deserializeSession, serializeSession } from './save';
 import * as devTools from './dev-tools';
-import { MAX_DEV_CREDITS, setDevCredits, setOmniVision, teleportToHopper } from './dev-tools';
+import { MAX_DEV_CREDITS, setDevCredits, setOmniVision, teleportToHopper, warpToDemoEnd } from './dev-tools';
 
 function stockTank(session: Session, amount: number): void {
   let remaining = amount;
@@ -21,7 +22,90 @@ const idle: GameInput = {
   digging: false, aim: { x: 100, y: 100 }, collecting: false, depositPressed: false,
 };
 
+function smallStockedSession(): Session {
+  const session = createSession({ seed: 42 });
+  session.world = new World(64, 64);
+  session.explored = new Uint8Array(session.world.water.length);
+  session.player.x = 80;
+  session.fallingDirt = [];
+  for (let y = 1; y < session.world.height - 1; y++) {
+    for (let x = 1; x < session.world.width - 1; x++) {
+      session.world.water[session.world.index(x, y)] = x % 2 ? 0.25 : 0.75;
+    }
+  }
+  session.initialWater = totalWater(session.world);
+  return session;
+}
+
 describe('provisional development controls', () => {
+  it.each([400, 600])('warps to the %i-water ending by transferring existing water, with a valid saved ledger', deliveryLimit => {
+    const session = smallStockedSession();
+    session.deliveryLimit = deliveryLimit;
+    stockTank(session, 13);
+    session.delivered += depositAtHopper(session.tank, session.hopper, session.hopper, 0);
+    stockTank(session, 10);
+    setDevCredits(session, 90);
+    buyUpgrade(session.tank, 'digRadius');
+    session.strikeTime = 0.1;
+    session.digCooldown = 0.3;
+    session.lastStrike = { center: { x: 600, y: 700 }, damaged: 2, removed: 1, time: session.time };
+    session.unloading = true;
+    const terrain = session.world.solid.slice();
+    const upgrades = { ...session.tank.upgrades };
+    const player = { ...session.player };
+    const credits = session.tank.credits;
+    const adjustment = session.devCreditAdjustment;
+    const needed = deliveryLimit - session.delivered;
+
+    expect(warpToDemoEnd(session)).toBe(true);
+    expect(session.completed).toBe(true);
+    expect(session.delivered).toBe(deliveryLimit);
+    expect(session.tank.water).toBe(0);
+    expect(session.tank.credits).toBe(credits + needed);
+    expect(session.devCreditAdjustment).toBe(adjustment);
+    expect(totalWater(session.world) + session.tank.water + session.delivered).toBeCloseTo(session.initialWater, 5);
+    expect(session.world.solid).toEqual(terrain);
+    expect(session.tank.upgrades).toEqual(upgrades);
+    expect(session.player).toEqual(player);
+    expect(session.strikeTime).toBe(-1);
+    expect(session.digCooldown).toBe(0);
+    expect(session.lastStrike).toBeNull();
+    expect(session.unloading).toBe(false);
+    expect(deserializeSession(serializeSession(session)).completed).toBe(true);
+    const ended = JSON.stringify(session);
+    expect(warpToDemoEnd(session)).toBe(false);
+    stepSession(session, idle, 1);
+    expect(JSON.stringify(session)).toBe(ended);
+  });
+
+  it('uses only the needed tank water when already near the ending', () => {
+    const session = smallStockedSession();
+    stockTank(session, session.deliveryLimit - 5);
+    session.delivered += depositAtHopper(session.tank, session.hopper, session.hopper, 0);
+    stockTank(session, 10);
+    const water = session.world.water.slice();
+    const credits = session.tank.credits;
+    expect(warpToDemoEnd(session)).toBe(true);
+    expect(session.world.water).toEqual(water);
+    expect(session.tank.water).toBe(5);
+    expect(session.tank.credits).toBe(credits + 5);
+    expect(totalWater(session.world) + session.tank.water + session.delivered).toBeCloseTo(session.initialWater, 5);
+  });
+
+  it('leaves a depleted fixture untouched when it cannot fund the ending', () => {
+    const session = createSession();
+    session.world = new World(8, 8);
+    session.world.water[session.world.index(2, 2)] = 3;
+    session.tank.water = 4;
+    session.delivered = 10;
+    session.initialWater = 17;
+    session.strikeTime = 0.1;
+    session.unloading = true;
+    const before = JSON.stringify(session);
+    expect(warpToDemoEnd(session)).toBe(false);
+    expect(JSON.stringify(session)).toBe(before);
+  });
+
   it('resets wall-jump state and recharges the air jump when teleporting onto the platform', () => {
     const session = createSession({ seed: 42 });
     session.player.airJumpAvailable = false;

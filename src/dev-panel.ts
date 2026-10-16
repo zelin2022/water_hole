@@ -1,4 +1,4 @@
-import { MAX_DEV_CREDITS, setDevCredits, setOmniVision, teleportToHopper } from './game/dev-tools';
+import { MAX_DEV_CREDITS, setDevCredits, setOmniVision, teleportToHopper, warpToDemoEnd } from './game/dev-tools';
 import type { Session } from './game/session';
 
 interface DevPanelActions {
@@ -39,6 +39,12 @@ export class DevPanel {
         }
         actions.changed();
         this.feedback('Player moved to the hopper.');
+      } else if (target.closest('[data-dev-end]')) {
+        if (!warpToDemoEnd(actions.session())) {
+          this.feedback(actions.session().completed ? 'This demo has ended.' : 'Not enough water remains to complete this test. Warp cancelled.');
+          return;
+        }
+        actions.changed();
       }
     });
   }
@@ -51,6 +57,7 @@ export class DevPanel {
       <form id="dev-credits-form"><label class="setting-row">Set credits to<input id="dev-credits" type="number" min="0" max="${MAX_DEV_CREDITS}" step="any" value="${session.tank.credits}" required></label>
         <button type="submit" class="primary-button">Set credits</button></form>
       <button type="button" data-dev-teleport class="menu-button">Teleport to hopper</button>
+      <button type="button" data-dev-end class="menu-button">Warp to demo end</button>
       <p id="dev-feedback" class="small-note" role="status" aria-live="polite"></p>
       <div class="panel-actions"><button type="button" data-dev-close class="menu-button">Close panel</button></div>
       <p class="small-note">Backtick or Escape closes this panel.</p>`;

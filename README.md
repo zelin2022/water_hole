@@ -89,7 +89,9 @@ One local slot supports manual Save/Load, Continue, autosaving every 30 seconds,
 
 ## Reports and release identification
 
-The candidate displays its Demo version and includes a local bug-report/save export flow accessible from pause and the ending. Reports include the build version, map seed, platform and run details, with space for a description and reproduction steps. Exporting requires a player action; the game sends no telemetry and does not upload reports automatically.
+Press **F8** to pause and report a bug with an automatically captured game screenshot. Preview or remove the screenshot, describe the issue, and review the included game details. The shortcut is rebindable. Reports and screenshots can be downloaded; custom image uploads are absent. Drafts persist locally. The ending congratulates you and offers an optional five-star rating and suggestions. The gated developer panel includes **Warp to demo end** for testing it.
+
+Online submission is implemented but not connected to a public receiver. Set `VITE_FEEDBACK_API_URL` to the actual HTTPS service origin after deployment and verification setup, then rebuild. Sending requests a human check and submits only after an explicit player action. Local copies/exports remain available while unconfigured. See [feedback design and remaining hosting decision](docs/FEEDBACK.md) and [the separate receiver](feedback-server/README.md).
 
 Configure the optional compile-time `VITE_FEEDBACK_URL` with the actual public HTTPS feedback destination before releasing. `VITE_STORE_URL` can point to the actual Steam page once it exists. Missing or invalid URLs leave the corresponding links absent; changing them requires a rebuild. The feedback destination is still pending, so export alone is not yet a complete submission channel.
 
@@ -123,6 +125,8 @@ npm run benchmark
 ```
 
 Development follows TDD: confirm a failing behaviour test, implement, then refactor with tests passing. Terrain, water, movement, progression, saving, lighting, sonar, and detection remain independent of Canvas/Electron. `npm test` also checks the desktop bridge/display contract and verifies that actual release JavaScript excludes developer tools. Controls and rendering receive browser/desktop playtests.
+
+Use Node.js 24 for development: `npm test` now includes the separate feedback receiver's built-in SQLite tests. `npm run test:feedback` runs only those quick checks. The receiver is not bundled into the desktop game and requires no additional npm dependencies.
 
 The economy audit checks purchase opportunities and seeded supply without predicting playtime. The short stress benchmark exercises deep tunnels, many water bodies, maximum mining, lighting and sonar, then writes per-operation timings, worker CPU/memory, and water-accounting metrics to gitignored `benchmark-results/`. It measures calculations rather than rendered frame rate; see [benchmark details](docs/BENCHMARK.md) and [economy review](docs/ECONOMY_REVIEW.md).
 
