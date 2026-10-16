@@ -14,20 +14,19 @@ The demo develops the excavation and water-selling loop into a presentable Steam
 - Detached dirt islands of one to three cells fall and disappear on landing, clearing small floating obstacles. Shared-edge contact with other solid terrain anchors a dirt group. Larger islands and stone do not collapse. Falling fragments are nonblocking and do not displace water.
 - Keep water accounted for across terrain, the tank, and the machine. Credit only the amount actually transferred, including interrupted transfers.
 
-## Selectable comparison builds
+## Water-pocket comparison
 
-Build both alternatives for each comparison. Make them selectable before starting a playtest; switching during gameplay is optional where practical. Keep the two choices independent so all combinations can be tested. Final public-demo defaults and whether both alternatives ship remain subject to playtesting.
+Keep many-small and fewer-large water distributions selectable before starting a playtest, and preserve the chosen layout in saves. The final public-demo distribution remains subject to playtesting.
 
 | Comparison | Alternative A | Alternative B |
 | --- | --- | --- |
-| Explored cave visibility | Explored cave outlines remain dimly visible outside current illumination. | Explored caves become dark; sonar is needed to reveal their outlines. |
 | Water pockets | Many small pockets create more separate discoveries. | Fewer large pockets provide more water per discovery. |
 
-Both vision alternatives use a small light around the character plus a headlamp. Solid terrain conceals water. Cave sonar is a navigation tool: its wave travels through connected open space, follows tunnels around bends, and briefly traces adjacent wall outlines. Terrain blocks propagation, including diagonal corner gaps. Sealed cavities and water pockets remain hidden. It works on the current cave geometry without permanently exploring or illuminating it.
+Dark caves with temporary sonar outlines are the selected vision mode. A small light around the character and a mouse-aimed headlamp illuminate the immediate working area. Outside illumination and active echoes, all cave outlines stay dark, including previously explored ones. Solid terrain conceals water. Cave sonar is a navigation tool: its wave travels through connected open space, follows tunnels around bends, and briefly traces adjacent wall outlines. Terrain blocks propagation, including diagonal corner gaps. Sealed cavities and water pockets remain hidden. It works on the current cave geometry without permanently exploring or illuminating it.
 
 Retain the original penetrating radial scan as the **Subsurface scanner**, a separate reserved item. Its pulse can trace sealed cavities, including water-pocket outlines, through terrain. Hide it from the shop and reject purchases until its design is finalized; no player keybinding is assigned. Save its pulse/cooldown separately from Cave sonar. Existing Cave sonar ownership carries over to the new navigation mechanic, and older saves receive an unowned, inactive scanner.
 
-The headlamp comparison is resolved: the lamp follows mouse aim and the visible head rotates with that aim. Continue/load preserves the cave-memory and pocket-distribution choices. Older saves retain their world and switch character-facing lamps to mouse aim. Keep a development-only full-visibility option for testing.
+The headlamp comparison is also resolved: the lamp follows mouse aim and the visible head rotates with that aim. Remove both vision comparison selectors. Continue/load preserves the pocket distribution; older saves adopt dark caves and mouse-aimed lamps while retaining their world, exploration data, equipment, and progress. Keep a development-only full-visibility option for testing.
 
 ### Depth-based water pockets
 
@@ -51,7 +50,7 @@ Bands use pocket centre rows below 120, 120–184, and 185 onward on the 256-row
 | Outline lifetime | 0.5 seconds total per segment, including initial appearance and the slower fade |
 | Cooldown | 15 seconds |
 
-All timings remain tunable. Each reachable outline segment starts its own appearance/fade when reached by the wave. Draw the Cave sonar wavefront only inside reachable open cells. Outlines fade instead of remaining permanently mapped by sonar. Recompute propagation when excavation changes connectivity. Remembered outlines require the open side of a wall to have been explored, so seeing a thin wall's near face cannot reveal an unseen cavity on its far side.
+All timings remain tunable. Each reachable outline segment starts its own appearance/fade when reached by the wave. Draw the Cave sonar wavefront only inside reachable open cells. Outlines fade instead of remaining permanently mapped by sonar. Recompute propagation when excavation changes connectivity. Exploration history never adds permanent outlines over darkness.
 
 ### Terrain responsive lighting
 
@@ -59,9 +58,9 @@ Daylight is stronger near sky-exposed terrain. Determine this exposure from the 
 
 Use sky visibility and attenuated light spreading through connected open space as the initial model. Terrain blocks light, while headlamps and surrounding work light keep the immediate working area readable. Recompute affected lighting as excavation changes the terrain.
 
-Keep illumination and remembered exploration distinct. Both comparison variants should have soft, workable local visibility. The sonar-dependent variant hides remote remembered cave outlines until pinged, rather than making the current working area oppressively black. Lighting must not expose water through solid rock.
+Keep illumination and exploration history distinct. Give the current working area soft, workable local visibility; distant unlit outlines require sonar. Lighting must not expose water through solid rock.
 
-Unlit environment is opaque darkness: cave space, rock, water, and their physical edges must not reveal the cave silhouette. Remembered mode adds only its faint explicit exploration outline; sonar mode adds an outline only while the ping passes. Light reveals and tints the actual environment, with pale white moon/sky light and warm yellow headlamp/torso light. Adding a light must never darken an already illuminated area. Narrow shafts attenuate sky light with depth; light updates when excavation changes sky exposure.
+Unlit environment is opaque darkness: cave space, rock, water, and their physical edges must not reveal the cave silhouette. Scan echoes add temporary outlines as the ping passes. Light reveals and tints the actual environment, with pale white moon/sky light and warm yellow headlamp/torso light. Adding a light must never darken an already illuminated area. Narrow shafts attenuate sky light with depth; light updates when excavation changes sky exposure.
 
 Player lamps become subdued where ambient light is stronger, restoring their strength as the surroundings darken. Evaluate this at each illuminated surface, so a headlamp aimed from daylight into a dark tunnel still works. The blend must not create a dark dip on the way toward the surface.
 
@@ -92,7 +91,7 @@ Hide unavailable upgrades, including unmet prerequisites and equipment with no r
 
 ### Other upgrade ideas retained for tuning
 
-These proposals remain available for discussion without being added to the initial upgrade selection. Sonar v0's mechanic is already included for the vision comparison; its availability or purchase arrangement in that build remains to be tuned.
+These proposals remain available for discussion without being added to the initial upgrade selection. Cave sonar is already included as a one-time navigation upgrade; its balance remains subject to tuning.
 
 | Candidate | Original proposed behaviour |
 | --- | --- |
@@ -134,12 +133,12 @@ Continue test-driven development: write a meaningful failing behaviour test, con
 
 Test grounded stepping in both directions, ascent/descent caps, headroom, swept-path collisions, and jumping/airborne exclusions alongside falling-only attachment, detachment suppression, the wall-dig purchase restriction, strike timing and damage, fixed digging distance, upgrades, detector behaviour, water conservation during transfer, save/load, comparison-mode restoration, and the delivery cutoff. Test generated sites deterministically across seeds and both distributions: accessible starter water, separated bodies, depth-based volume variation, comparable budgets, and enough water for the demo. Test sonar around bends, sealed pockets, both faces of thin walls, diagonal gaps, excavation changes, timing/fade and cooldown. Verify the retained scanner penetrates independently while its purchase stays hidden. Preserve legacy saved worlds and equipment when adding new options or items.
 
-Playtest both alternatives in each comparison, including their independent selection and save/load restoration. Check mouse-aimed lighting and visible head rotation, digging feel, readable darkness, discovery, movement, sound, menus, keybindings, and progression manually. Before finishing implementation changes, run `npm test` and `npm run build`, and playtest control/rendering changes in the browser or Electron.
+Playtest both water-pocket distributions, including selection and save/load restoration. Check that explored unlit caves stay dark before and after sonar fades, including when loading an older remembered-outline save. Check mouse-aimed lighting and visible head rotation, digging feel, readable darkness, discovery, movement, sound, menus, keybindings, and progression manually. Before finishing implementation changes, run `npm test` and `npm run build`, and playtest control/rendering changes in the browser or Electron.
 
 ## Provisional build tuning
 
 The first implementation uses a 400-unit cumulative delivery cutoff, 0.48 seconds between pickaxe swings with a 0.12-second wind-up, and 25 water units per second of hopper transfer. Earth durability is 1 and stone durability is 3. All are starting values for playtesting.
 
-Tune the core timings and delivery limit in `src/game/session.ts`, water-pocket budgets and sizes in `src/game/generation.ts`, upgrade effects/prices in `src/game/economy.ts`, material durability/reach in `src/game/digging.ts`, wall grip/contour tolerance and walking-step height in `src/game/player.ts`, and lighting/sonar in `src/game/vision.ts`. Held grips currently bridge up to 8 world pixels; walking steps default to two terrain cells; ambient lamp suppression is 0.85. New Game exposes cave-memory and water-distribution choices; builds with developer tools enabled also expose full visibility and the backtick panel's live step-height comparison. `npm run build:release` and the `package:*:release` commands use `.env.release` to disable those tools. The current presentation and original synthesized audio are a first pass toward the art brief.
+Tune the core timings and delivery limit in `src/game/session.ts`, water-pocket budgets and sizes in `src/game/generation.ts`, upgrade effects/prices in `src/game/economy.ts`, material durability/reach in `src/game/digging.ts`, wall grip/contour tolerance and walking-step height in `src/game/player.ts`, and lighting/sonar in `src/game/vision.ts`. Held grips currently bridge up to 8 world pixels; walking steps default to two terrain cells; ambient lamp suppression is 0.85. New Game exposes the water-distribution choice; builds with developer tools enabled also expose full visibility and the backtick panel's live step-height comparison. `npm run build:release` and the `package:*:release` commands use `.env.release` to disable those tools. The current presentation and original synthesized audio are a first pass toward the art brief.
 
 Standalone Windows packaging is available. Native macOS packaging/QA, final balance and art refinement, and the [Steam release preparation](STEAM_DEMO_RELEASE.md) remain before the public demo release.

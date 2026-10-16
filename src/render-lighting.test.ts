@@ -47,10 +47,8 @@ describe('environment illumination', () => {
   });
 
   it('keeps a dark sonar cave outline hidden except during a pulse', () => {
-    expect(caveOutlineOpacity(false, 0)).toBe(0);
-    expect(caveOutlineOpacity(false, 0.8)).toBeCloseTo(0.6);
-    expect(caveOutlineOpacity(false, 0)).toBe(0);
-    expect(caveOutlineOpacity(true, 0)).toBeGreaterThan(0);
-    expect(caveOutlineOpacity(true, 0)).toBeLessThan(0.1);
+    expect(caveOutlineOpacity(0)).toBe(0);
+    expect(caveOutlineOpacity(0.8)).toBeCloseTo(0.6);
+    expect(caveOutlineOpacity(0)).toBe(0);
   });
 });

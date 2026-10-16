@@ -75,8 +75,8 @@ export function deserializeSession(json: string): Session {
     && typeof state.options.debugVision === 'boolean', 'comparison options');
   const stepHeightCells = state.options.stepHeightCells === undefined ? DEFAULT_STEP_HEIGHT_CELLS : state.options.stepHeightCells;
   assert(stepHeightCells === 1 || stepHeightCells === 2, 'comparison options');
-  // Earlier v1 runs used the larger-pocket layout. Keep their stored world;
-  // only normalize the retired headlamp comparison and missing preset metadata.
+  // Keep earlier v1 worlds and exploration intact, while normalizing retired
+  // cave-memory/headlamp comparisons and missing water-preset metadata.
   const waterDistribution = state.options.waterDistribution === undefined ? 'fewer-large' : state.options.waterDistribution;
   assert(waterDistribution === 'many-small' || waterDistribution === 'fewer-large', 'comparison options');
   assert(finite(state.surfaceY, 0, extentY) && point(state.hopper, extentX, extentY), 'surface or machine');
@@ -140,6 +140,6 @@ export function deserializeSession(json: string): Session {
   // completed runs retain their frozen terrain and new saves keep their debris.
   if (state.fallingDirt === undefined && !state.completed) fallingDirt = detachSmallDirt(world);
   return { ...state, world, fallingDirt, devCreditAdjustment, subsurfaceScan, lastSubsurfaceScanAt,
-    options: { ...state.options, stepHeightCells, waterDistribution, headlamp: 'mouse' },
+    options: { ...state.options, stepHeightCells, waterDistribution, caveMemory: 'sonar', headlamp: 'mouse' },
     explored: Uint8Array.from(state.explored) } as Session;
 }

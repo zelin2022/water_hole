@@ -34,6 +34,32 @@ function corrupt(change: (data: any) => void) {
 }
 
 describe('versioned local saves', () => {
+  it('migrates remembered caves to dark caves while preserving every other saved field', () => {
+    const session = stockedSession();
+    expect(buyUpgrade(session.tank, 'sonar')).toBe(true);
+    session.subsurfaceScan = { origin: { x: 180, y: 120 }, startedAt: 7, maxRadius: 600 };
+    session.lastSubsurfaceScanAt = 7;
+    session.tank.upgrades.subsurfaceScanner = 1;
+    const earlier = JSON.parse(serializeSession(session));
+    earlier.session.options.caveMemory = 'remembered';
+    const restored = deserializeSession(JSON.stringify(earlier));
+    expect(restored.options.caveMemory).toBe('sonar');
+    expect(JSON.parse(serializeSession(restored))).toEqual({ ...earlier,
+      session: { ...earlier.session, options: { ...earlier.session.options, caveMemory: 'sonar' } } });
+    expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(restored.initialWater, 5);
+  });
+
+  it('round-trips the selected dark-cave mode for new expeditions', () => {
+    const session = createSession({ seed: 42 });
+    expect(deserializeSession(serializeSession(session)).options.caveMemory).toBe('sonar');
+  });
+
+  it('rejects invalid cave-memory options instead of silently migrating corrupt data', () => {
+    for (const caveMemory of [null, 'unknown', '', 1, ['sonar']]) {
+      expect(() => deserializeSession(corrupt(data => data.session.options.caveMemory = caveMemory))).toThrow(/comparison options/);
+    }
+  });
+
   it('preserves independent cave-sonar and subsurface-scanner pulse state', () => {
     const session = stockedSession();
     session.subsurfaceScan = { origin: { x: 180, y: 120 }, startedAt: 7, maxRadius: 600 };

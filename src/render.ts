@@ -267,28 +267,25 @@ export class Renderer {
   private drawCaveOutlines(session: Session, vision: VisionState): void {
     const { world } = session; const s = world.cellSize; const ctx = this.context;
     const { minX, maxX, minY, maxY } = this.bounds(world);
-    const paths = Array.from({ length: 9 }, () => new Path2D());
+    const paths = Array.from({ length: 8 }, () => new Path2D());
     for (let y = Math.max(1, minY); y <= Math.min(world.height - 2, maxY); y++) {
       for (let x = Math.max(1, minX); x <= Math.min(world.width - 2, maxX); x++) {
         const i = world.index(x, y);
         if (!world.solid[i] || vision.light[i] > 0.3) continue;
         for (const [dx, dy, ax, ay, bx, by] of [[0, -1, 0, 0, 1, 0], [1, 0, 1, 0, 1, 1], [0, 1, 0, 1, 1, 1], [-1, 0, 0, 0, 0, 1]]) {
           if (world.isSolid(x + dx, y + dy)) continue;
-          const neighbor = world.index(x + dx, y + dy);
           const point = { x: (x + (ax + bx) / 2) * s, y: (y + (ay + by) / 2) * s };
           const sonar = Math.max(sonarOpacity(world, vision, point, session.time), subsurfaceScannerOpacity(vision, point, session.time));
-          // Knowing a near rock face must not reveal a sealed cavity on its far side.
-          const remembered = session.options.caveMemory === 'remembered' && Boolean(vision.explored[neighbor]);
-          const opacity = caveOutlineOpacity(remembered, sonar);
-          const bucket = sonar > 0 ? Math.max(1, Math.ceil(opacity / 0.75 * 8)) : opacity > 0 ? 0 : -1;
-          if (bucket < 0) continue;
+          const opacity = caveOutlineOpacity(sonar);
+          if (opacity <= 0) continue;
+          const bucket = Math.min(paths.length - 1, Math.ceil(opacity / 0.75 * paths.length) - 1);
           paths[bucket].moveTo((x + ax) * s, (y + ay) * s); paths[bucket].lineTo((x + bx) * s, (y + by) * s);
         }
       }
     }
     for (let i = 0; i < paths.length; i++) {
-      ctx.strokeStyle = i === 0 ? `rgba(104,125,126,${caveOutlineOpacity(true, 0)})` : `rgba(130,188,184,${i / 8 * 0.75})`;
-      ctx.lineWidth = i === 0 ? 0.7 : 1; ctx.stroke(paths[i]);
+      ctx.strokeStyle = `rgba(130,188,184,${(i + 1) / paths.length * 0.75})`;
+      ctx.lineWidth = 1; ctx.stroke(paths[i]);
     }
     if (vision.sonar) {
       const elapsed = session.time - vision.sonar.startedAt;

@@ -18,6 +18,7 @@ export function compositeEnvironmentColor(base: Rgb, moonlight: number, lampligh
   return base.map((value, channel) => Math.round(DARKNESS[channel] + value * transmission[channel] * (1 - DARKNESS[channel] / 255))) as unknown as Rgb;
 }
 
-export function caveOutlineOpacity(remembered: boolean, sonar: number): number {
-  return Math.max(remembered ? 0.09 : 0, sonar * 0.75);
+/** Only transient scan echoes add outlines over unlit terrain. */
+export function caveOutlineOpacity(sonar: number): number {
+  return sonar * 0.75;
 }

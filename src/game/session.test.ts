@@ -38,8 +38,13 @@ describe('demo session', () => {
     expect(session.tank.upgrades).toMatchObject({ sonar: 0, subsurfaceScanner: 0 });
   });
 
-  it('defaults to many small pockets and the selected mouse-aimed headlamp', () => {
-    expect(createSession().options).toMatchObject({ waterDistribution: 'many-small', headlamp: 'mouse' });
+  it('defaults to dark caves with sonar outlines, many small pockets and the mouse-aimed headlamp', () => {
+    expect(createSession().options).toMatchObject({ caveMemory: 'sonar', waterDistribution: 'many-small', headlamp: 'mouse' });
+  });
+
+  it('normalizes a retired cave-memory option from a legacy JavaScript caller to dark caves', () => {
+    const legacyOptions = JSON.parse('{"caveMemory":"remembered"}');
+    expect(createSession(legacyOptions).options.caveMemory).toBe('sonar');
   });
 
   it('creates distinct reproducible pocket distributions and starts both with an accounted water ledger', () => {

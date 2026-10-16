@@ -26,7 +26,7 @@ export interface GameInput extends PlayerInput {
 }
 export interface SessionOptions {
   seed?: number;
-  caveMemory?: 'remembered' | 'sonar';
+  caveMemory?: 'sonar';
   headlamp?: 'mouse';
   waterDistribution?: WaterDistribution;
   debugVision?: boolean;
@@ -73,7 +73,7 @@ export function createSession(options: SessionOptions = {}): Session {
     hopper: site.hopper,
     surfaceY: site.surfaceY,
     seed,
-    options: { seed, caveMemory: options.caveMemory ?? 'remembered', headlamp: 'mouse', waterDistribution,
+    options: { seed, caveMemory: 'sonar', headlamp: 'mouse', waterDistribution,
       debugVision: options.debugVision ?? false, stepHeightCells: options.stepHeightCells ?? DEFAULT_STEP_HEIGHT_CELLS },
     delivered: 0, devCreditAdjustment: 0, time: 0, completed: false,
     initialWater: totalWater(site.world),
