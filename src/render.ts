@@ -1,4 +1,4 @@
-import { COLLECTION_RADIUS, DIG_WINDUP, playerCenter, type Session } from './game/session';
+import { COLLECTION_RADIUS, playerCenter, type Session } from './game/session';
 import { strikeCenter } from './game/digging';
 import { upgradeStats } from './game/economy';
 import { findNearestWater } from './game/detector';
@@ -425,11 +425,12 @@ export class Renderer {
     ctx.restore();
     if (p.wall && !session.tank.upgrades.wallDig) return;
     const origin = playerCenter(session); const base = Math.atan2(aim.y - origin.y, aim.x - origin.x);
-    const windup = session.strikeTime >= 0 ? clamp(session.strikeTime / DIG_WINDUP, 0, 1) : 0;
+    const stats = upgradeStats(session.tank);
+    const windup = session.strikeTime >= 0 ? clamp(session.strikeTime / stats.digWindup, 0, 1) : 0;
     const age = session.lastStrike ? session.time - session.lastStrike.time : 1;
     const impact = age < 0.13 ? 1 - age / 0.13 : 0;
     const angle = base - facing * (windup + (impact ? -0.12 * impact : 0.25));
-    const reach = windup || impact ? upgradeStats(session.tank).digRadius + 12 : 18;
+    const reach = windup || impact ? stats.digRadius + 12 : 18;
     ctx.strokeStyle = '#c18b53'; ctx.lineWidth = 3; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(origin.x - facing * 2, origin.y - 3); ctx.lineTo(origin.x + Math.cos(angle) * 8, origin.y + Math.sin(angle) * 8); ctx.stroke();
     ctx.strokeStyle = '#8a7353'; ctx.lineWidth = 2.3; ctx.beginPath();

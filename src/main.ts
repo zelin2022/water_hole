@@ -59,7 +59,11 @@ const down = (action: Action) => held.has(settings.bindings[action]);
 const devPanel = DEV_TOOLS_ENABLED ? new DevPanel(el('panel'), {
   session: () => session,
   isOpen: () => screen === 'dev',
-  changed: () => { lastVisionAt = -1; updateHUD(); saveRun(false); },
+  changed: () => {
+    clearInput(); pointer.active = false;
+    const centre = playerCenter(session); aim = { x: centre.x + session.facing * 80, y: centre.y };
+    lastVisionAt = -1; updateHUD(); saveRun(false);
+  },
   close: () => changeScreen(devReturn),
 }) : null;
 function clearInput(): void { held.clear(); pressed.clear(); accumulated = 0; }
@@ -74,9 +78,9 @@ function saveRun(notify = true): boolean {
   catch { if (notify) notice('Could not save. Local storage may be full or unavailable.'); return false; }
 }
 function restore(next: Session): void {
+  next.options.stepHeightCells = DEFAULT_STEP_HEIGHT_CELLS;
   if (!DEV_TOOLS_ENABLED) {
     next.options.debugVision = false;
-    next.options.stepHeightCells = DEFAULT_STEP_HEIGHT_CELLS;
   }
   session = next; hasRun = true; vision = createVision(session.world, session.explored);
   vision.sonar = session.sonar; vision.lastSonarAt = session.lastSonarAt; pointer.active = false;
@@ -129,6 +133,7 @@ function statDescription(id: UpgradeId): string {
   switch (id) {
     case 'digRadius': return `Impact radius ${stats.digRadius} → ${next.digRadius ?? stats.digRadius}`;
     case 'digDamage': return `Damage per strike ${stats.digDamage} → ${next.digDamage ?? stats.digDamage}`;
+    case 'digSpeed': return `Seconds per swing ${stats.digInterval.toFixed(2)} → ${(next.digInterval ?? stats.digInterval).toFixed(2)}`;
     case 'climbSpeed': return `Climbing speed ${stats.climbSpeed} → ${next.climbSpeed ?? stats.climbSpeed}`;
     case 'capacity': return `Water capacity ${stats.capacity} → ${next.capacity ?? stats.capacity}`;
     case 'detectorRange': return session.tank.upgrades.detector
@@ -304,6 +309,8 @@ function tick(time: number): void {
     updateVision(session.world, vision, { position: playerCenter(session), headPosition: { x: session.player.x + session.player.width / 2, y: session.player.y + 6 }, aim, facing: session.facing, time: session.time, debugVision: DEV_TOOLS_ENABLED && session.options.debugVision });
     lastVisionAt = session.time; lastTerrainVersion = session.world.terrainVersion;
   }
+  audio.setScene(Math.max(0, (session.player.y - session.surfaceY) / session.world.cellSize),
+    session.tank.water / session.tank.capacity);
   renderer.render(session, aim, screen === 'playing' && down('collect'), vision);
   if (hasRun && screen === 'playing' && session.time - lastAutoSaveAt >= 30) saveRun(false);
   if (time - lastHUDAt > 100) { updateHUD(); lastHUDAt = time; } if (time > noticeUntil) el('notice').classList.remove('visible');

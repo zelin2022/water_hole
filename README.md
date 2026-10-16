@@ -34,7 +34,7 @@ Dark caves with temporary sonar outlines are now the standard. Explored caves be
 
 The exchange stands on an indestructible reinforced platform at the left map edge, with its foundation extending to the bottom. Its exposed right face stays climbable when nearby ground is removed, with no overhang at the top. The underground starter shaft is immediately beside it. Airborne wall contact attaches only while falling. Hold S to descend after attaching, then work from the shaft floor to reach the first pocket; if it is dry, keep exploring. Digging while attached is disabled until the work-harness upgrade is purchased. The foundation appears in new expeditions; loading an existing run preserves its stored terrain and machine.
 
-Grounded walking automatically steps up and follows down small terrain changes, up to two cells (8 pixels) by default. Stepping requires clear space above the character. Larger ledges and drops retain the normal jumping, climbing, and falling controls.
+Grounded walking automatically steps up and follows down small terrain changes, up to two cells (8 pixels). This is the selected behaviour, including for older saves made with one-cell steps. Stepping requires clear space above the character. Larger ledges and drops retain the normal jumping, climbing, and falling controls.
 
 Clinging needs hand/torso contact backed by connected wall terrain. Uneven dug faces remain climbable: held grips follow shallow recesses and ledges, while foot-level bumps and isolated cells do not catch the character. The attached pose grips the wall with both hands before the harness upgrade, then visibly wields the pickaxe after installation. Underground darkness conceals the environment. Pale moonlight enters exposed openings and weakens in narrow shafts; warm head/torso lights reveal the nearby surroundings. Player lamps dim in strong ambient light and recover in darkness, including when aimed from the surface into a dark tunnel. Cave outlines need illumination or a temporary scan echo to appear.
 
@@ -57,7 +57,9 @@ Detached dirt islands of up to three cells fall away and disappear on landing. T
 | Q after installing cave sonar | Trace connected tunnel outlines |
 | Escape | Pause / return from menus |
 
-Climbing is unlimited and water is harmless. The shop offers pick radius, pick damage, climb speed, tank capacity, water detection/range, wall digging, and sonar. Numerical balance is provisional. Settings include display presets/fullscreen, music/SFX volume, and keybindings. Escape remains reserved for pause/menu navigation.
+Climbing is unlimited and water is harmless. The shop offers pick radius, pick damage, swing speed, climb speed, tank capacity, water detection/range, wall digging, and sonar. Mining has seven radius purchases (12 → 76 pixels), three damage purchases (1 → 6), and three speed purchases (0.48 → 0.16 seconds per swing). Stone has 6 durability, taking 6, 3, 2, then 1 impact across the damage tiers; earth remains 1. The full mining set costs 285 credits, with smaller wind-ups at higher speed so strikes remain discrete. Numerical balance is provisional. Older saves receive an unpurchased speed track and keep existing radius/damage stats and partial terrain damage. Settings include display presets/fullscreen, music/SFX volume, and keybindings. Escape remains reserved for pause/menu navigation.
+
+The original synthesized ambient music now varies continuously with current depth and tank fill. Empty tanks favour exploration; fuller tanks bring in a returning motif, while deeper work adds lower tones. Layers blend smoothly rather than restarting the score when a boundary is crossed. Music and SFX keep separate volume controls.
 
 Unavailable and fully installed upgrades are hidden. Eligible upgrades without enough credits show their price in red; the install button becomes available when funded. Buying a water detector reveals its range upgrades.
 
@@ -65,7 +67,7 @@ Unavailable and fully installed upgrades are hidden. Eligible upgrades without e
 
 Press the backtick key (`` ` ``) during an expedition to open the provisional developer panel. It also opens from pause or the equipment shop. Gameplay pauses while the panel is open; backtick, Escape, or Close panel returns to the previous screen.
 
-The panel lets you toggle omni vision, set the current credit balance to a nonnegative amount up to 1 billion, and compare one-cell versus two-cell walking steps. Changes are saved with the expedition. Development credits do not count as delivered water or advance the demo cutoff, and omni vision does not permanently explore the whole map.
+The panel lets you toggle omni vision, set the current credit balance to a nonnegative amount up to 1 billion, and teleport to the hopper. Teleport prefers a clear supported position near the saved machine, resets motion and pending actions, and preserves the tank, water, credits, and terrain. If an older run has a floating machine, a clear airborne destination can be used; blocked destinations report failure. Changes are saved with the expedition. Development credits do not count as delivered water or advance the demo cutoff, and omni vision does not permanently explore the whole map.
 
 The build flag `VITE_DEV_TOOLS=true` in `.env` enables these tools for current browser, desktop, and packaged playtests. `.env.release` disables them for `npm run build:release` and the release packaging commands below. A disabled build excludes the panel and hotkey, ignores saved omni-vision overrides, and uses the two-cell walking-step default. Restart the development server after changing the flag. Environment overrides take precedence over the `.env` files.
 

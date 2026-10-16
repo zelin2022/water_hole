@@ -1,3 +1,6 @@
+import { advanceMusicMix, MUSIC_BEAT_SECONDS, musicMix, musicNotes } from './music';
+import type { MusicMix } from './music';
+
 export type Sound = 'strike' | 'break' | 'collect' | 'unload' | 'buy' | 'sonar' | 'menu' | 'end';
 
 /** Small original synthesised score and effects; no network or external audio assets. */
@@ -5,6 +8,11 @@ export class AudioEngine {
   private context: AudioContext | undefined;
   private musicBus: GainNode | undefined;
   private effectsBus: GainNode | undefined;
+  private layers: Record<keyof MusicMix, GainNode> | undefined;
+  private mix = musicMix(0, 0);
+  private targetMix = musicMix(0, 0);
+  private lastMixAt = 0;
+  private nextBeatAt = 0;
   private music = 0.25;
   private effects = 0.65;
   private active = true;
@@ -16,44 +24,80 @@ export class AudioEngine {
       this.context = new AudioContext();
       this.musicBus = this.context.createGain();
       this.effectsBus = this.context.createGain();
+      this.musicBus.gain.value = 0;
+      this.effectsBus.gain.value = 0;
       this.musicBus.connect(this.context.destination);
       this.effectsBus.connect(this.context.destination);
+      const layer = (volume: number) => {
+        const bus = this.context!.createGain();
+        bus.gain.value = volume;
+        bus.connect(this.musicBus!);
+        return bus;
+      };
+      this.layers = {
+        exploration: layer(this.mix.exploration), returning: layer(this.mix.returning),
+        depth: layer(this.mix.depth), surface: layer(this.mix.surface),
+      };
+      this.lastMixAt = this.context.currentTime;
+      this.nextBeatAt = this.context.currentTime + 0.025;
       this.volumes(this.music, this.effects);
-      setInterval(() => this.score(), 800);
+      setInterval(() => this.score(), 50);
+      this.score();
     }
     if (this.context.state === 'suspended') await this.context.resume();
   }
   volumes(music: number, effects: number): void {
-    this.music = music;
-    this.effects = effects;
-    if (this.musicBus) this.musicBus.gain.value = this.active ? music * 0.18 : 0;
-    if (this.effectsBus) this.effectsBus.gain.value = effects * 0.3;
+    this.music = this.volume(music);
+    this.effects = this.volume(effects);
+    if (this.musicBus) this.ramp(this.musicBus, this.active ? this.music * 0.18 : 0, 0.15);
+    if (this.effectsBus) this.ramp(this.effectsBus, this.effects * 0.3, 0.08);
   }
-  setActive(active: boolean): void { this.active = active; this.volumes(this.music, this.effects); }
-  private tone(frequency: number, duration: number, bus: GainNode, volume: number, type: OscillatorType = 'sine', endFrequency = frequency): void {
+  setActive(active: boolean): void {
+    if (active === this.active) return;
+    this.active = active;
+    if (this.musicBus) this.ramp(this.musicBus, active ? this.music * 0.18 : 0, 0.15);
+  }
+  setScene(depth: number, tankFill: number): void { this.targetMix = musicMix(depth, tankFill); }
+  private volume(value: number): number { return Number.isNaN(value) ? 0 : Math.max(0, Math.min(1, value)); }
+  private ramp(bus: GainNode, volume: number, duration: number): void {
+    const now = this.context!.currentTime;
+    // Holding the current automation value keeps interrupted fades continuous.
+    bus.gain.cancelAndHoldAtTime(now);
+    bus.gain.linearRampToValueAtTime(volume, now + duration);
+  }
+  private tone(frequency: number, duration: number, bus: GainNode, volume: number, type: OscillatorType = 'sine', endFrequency = frequency, startAt?: number, attack = 0.025): void {
     const ctx = this.context!;
     const oscillator = ctx.createOscillator();
     const envelope = ctx.createGain();
-    const now = ctx.currentTime;
+    const now = startAt ?? ctx.currentTime;
     oscillator.type = type;
     oscillator.frequency.setValueAtTime(frequency, now);
     oscillator.frequency.exponentialRampToValueAtTime(Math.max(20, endFrequency), now + duration);
     envelope.gain.setValueAtTime(0, now);
-    envelope.gain.linearRampToValueAtTime(volume, now + Math.min(0.025, duration / 5));
+    envelope.gain.linearRampToValueAtTime(volume, now + Math.min(attack, duration / 3));
     envelope.gain.exponentialRampToValueAtTime(0.001, now + duration);
+    envelope.gain.linearRampToValueAtTime(0, now + duration + 0.025);
     oscillator.connect(envelope); envelope.connect(bus);
+    oscillator.onended = () => { oscillator.disconnect(); envelope.disconnect(); };
     oscillator.start(now); oscillator.stop(now + duration + 0.03);
   }
   private score(): void {
-    if (!this.context || !this.musicBus || !this.active || this.music === 0) return;
-    const melody = [220, 261.63, 329.63, 293.66, 220, 196, 261.63, 246.94, 220, 329.63, 293.66, 261.63, 196, 164.81, 196, 220];
-    this.tone(melody[this.beat % melody.length], 1.5, this.musicBus, 0.25, 'sine');
-    if (this.beat % 4 === 0) {
-      const root = [110, 87.31, 98, 82.41][Math.floor(this.beat / 4) % 4];
-      this.tone(root, 3.1, this.musicBus, 0.3, 'sine');
-      this.tone(root * 1.5, 3.1, this.musicBus, 0.13, 'sine');
+    if (!this.context || !this.musicBus || !this.layers) return;
+    const now = this.context.currentTime;
+    this.mix = advanceMusicMix(this.mix, this.targetMix, now - this.lastMixAt);
+    this.lastMixAt = now;
+    for (const key of Object.keys(this.layers) as (keyof MusicMix)[]) this.ramp(this.layers[key], this.mix[key], 0.06);
+    if (!this.active || this.music === 0 || this.context.state !== 'running') return;
+    // Background throttling or a long pause must never cause a catch-up burst.
+    if (this.nextBeatAt < now - 0.1) this.nextBeatAt = now + 0.025;
+    while (this.nextBeatAt < now + 0.12) {
+      for (const note of musicNotes(this.beat)) {
+        const bus = note.layer === 'common' ? this.musicBus : this.layers[note.layer];
+        this.tone(note.frequency, note.duration, bus, note.volume, note.type, note.frequency, this.nextBeatAt + note.offset, note.attack);
+      }
+      this.beat++;
+      this.nextBeatAt += MUSIC_BEAT_SECONDS;
     }
-    this.beat++;
   }
   play(sound: Sound): void {
     if (!this.context || !this.effectsBus || this.effects === 0) return;

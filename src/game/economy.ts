@@ -1,7 +1,7 @@
 import type { Point, World } from './world';
 import { collectWater } from './water';
 
-export type UpgradeId = 'digRadius' | 'digDamage' | 'climbSpeed' | 'capacity' | 'detector' | 'detectorRange' | 'wallDig' | 'sonar' | 'subsurfaceScanner';
+export type UpgradeId = 'digRadius' | 'digDamage' | 'digSpeed' | 'climbSpeed' | 'capacity' | 'detector' | 'detectorRange' | 'wallDig' | 'sonar' | 'subsurfaceScanner';
 export type UpgradeAvailability = 'unavailable' | 'unaffordable' | 'available';
 export interface UpgradeDefinition {
   id: UpgradeId;
@@ -13,8 +13,9 @@ export interface UpgradeDefinition {
   hidden?: boolean;
 }
 export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
-  { id: 'digRadius', name: 'Wider pick', description: 'Increase the radius of each impact.', costs: [40, 100] },
-  { id: 'digDamage', name: 'Reinforced pick', description: 'Break harder terrain in fewer strikes.', costs: [35, 85] },
+  { id: 'digRadius', name: 'Wider pick', description: 'Increase the radius of each impact.', costs: [10, 15, 20, 25, 30, 35, 40] },
+  { id: 'digDamage', name: 'Reinforced pick', description: 'Break harder terrain in fewer strikes.', costs: [10, 15, 25] },
+  { id: 'digSpeed', name: 'Rapid pick', description: 'Swing the pick faster, with a shorter wind-up.', costs: [10, 20, 30] },
   { id: 'climbSpeed', name: 'Climbing assist', description: 'Climb walls faster.', costs: [35, 80] },
   { id: 'capacity', name: 'Larger tank', description: 'Carry more water on each trip.', costs: [60, 120] },
   { id: 'detector', name: 'Water detector', description: 'Point toward nearby water within 160 units.', costs: [25] },
@@ -41,9 +42,12 @@ export function createTank(capacity = 20): Tank {
 }
 
 export function upgradeStats(tank: Tank) {
+  const digInterval = [0.48, 0.34, 0.24, 0.16][tank.upgrades.digSpeed];
   return {
-    digRadius: [12, 16, 20][tank.upgrades.digRadius],
-    digDamage: [1, 2, 3][tank.upgrades.digDamage],
+    digRadius: [12, 16, 20, 26, 34, 44, 58, 76][tank.upgrades.digRadius],
+    digDamage: [1, 2, 3, 6][tank.upgrades.digDamage],
+    digInterval,
+    digWindup: digInterval / 4,
     climbSpeed: [65, 90, 120][tank.upgrades.climbSpeed],
     capacity: [20, 40, 60][tank.upgrades.capacity],
     detectorRadius: tank.upgrades.detector ? [160, 240, 320][tank.upgrades.detectorRange] : 0,

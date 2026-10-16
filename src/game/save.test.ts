@@ -35,6 +35,33 @@ function corrupt(change: (data: any) => void) {
 }
 
 describe('versioned local saves', () => {
+  it('round-trips heavily damaged stone while keeping its remaining durability and terrain intact', () => {
+    const session = stockedSession();
+    const stone = session.world.material.findIndex(material => material === 2);
+    session.world.damage[stone] = 5;
+    const restored = deserializeSession(serializeSession(session));
+    expect(restored.world.damage[stone]).toBe(5);
+    expect(restored.world.material).toEqual(session.world.material);
+    expect(restored.world.water).toEqual(session.world.water);
+    expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(restored.initialWater, 5);
+  });
+
+  it('preserves legacy partial stone damage and rejects terrain already beyond its durability', () => {
+    const session = stockedSession();
+    const stone = session.world.material.findIndex(material => material === 2);
+    const earth = session.world.material.findIndex(material => material === 1);
+    session.world.damage[stone] = 2;
+    expect(deserializeSession(serializeSession(session)).world.damage[stone]).toBe(2);
+    const brokenStone = JSON.parse(serializeSession(session));
+    brokenStone.world.damage[stone] = 6;
+    expect(() => deserializeSession(JSON.stringify(brokenStone))).toThrow(/broken terrain left solid/);
+    const brokenEarth = JSON.parse(serializeSession(session));
+    brokenEarth.world.damage[earth] = 1;
+    expect(() => deserializeSession(JSON.stringify(brokenEarth))).toThrow(/broken terrain left solid/);
+    brokenStone.world.damage[stone] = 6.1;
+    expect(() => deserializeSession(JSON.stringify(brokenStone))).toThrow(/terrain damage/);
+  });
+
   it('round-trips reinforced foundation with its indestructibility and water ledger intact', () => {
     const session = createSession({ seed: 42 });
     session.world.setMaterial(30, 30, 3);
@@ -226,12 +253,62 @@ describe('versioned local saves', () => {
     }
   });
 
-  it('preserves the walking step comparison and gives earlier v1 saves the two-cell default', () => {
-    const session = createSession({ stepHeightCells: 1 });
-    expect(deserializeSession(serializeSession(session)).options.stepHeightCells).toBe(1);
+  it('migrates the retired one-cell step comparison to two cells without replacing saved terrain', () => {
+    const session = stockedSession();
     const earlier = JSON.parse(serializeSession(session));
+    earlier.session.options.stepHeightCells = 1;
+    const restored = deserializeSession(JSON.stringify(earlier));
+    expect(restored.options.stepHeightCells).toBe(2);
+    expect(restored.world.material).toEqual(session.world.material);
+    expect(restored.world.water).toEqual(session.world.water);
+    expect(restored.player).toEqual(session.player);
     delete earlier.session.options.stepHeightCells;
     expect(deserializeSession(JSON.stringify(earlier)).options.stepHeightCells).toBe(2);
+  });
+
+  it('loads earlier v1 equipment without a speed upgrade and preserves in-flight base swing timing', () => {
+    const session = stockedSession();
+    const earlier = JSON.parse(serializeSession(session));
+    delete earlier.session.tank.upgrades.digSpeed;
+    earlier.session.digCooldown = 0.44;
+    earlier.session.strikeTime = 0.10;
+    const restored = deserializeSession(JSON.stringify(earlier));
+    expect(restored.tank.upgrades.digSpeed).toBe(0);
+    expect(restored.digCooldown).toBe(0.44);
+    expect(restored.strikeTime).toBe(0.10);
+    expect(restored.world.material).toEqual(session.world.material);
+    expect(restored.world.water).toEqual(session.world.water);
+    expect(restored.tank.upgrades.digRadius).toBe(session.tank.upgrades.digRadius);
+  });
+
+  it('round-trips all expanded mining levels and a faster pending swing', () => {
+    const session = stockedSession();
+    setDevCredits(session, 1000);
+    for (const [id, count] of [['digRadius', 7], ['digDamage', 3], ['digSpeed', 3]] as const) {
+      for (let level = 0; level < count; level++) expect(buyUpgrade(session.tank, id)).toBe(true);
+    }
+    session.digCooldown = 0.14;
+    session.strikeTime = 0.02;
+    const restored = deserializeSession(serializeSession(session));
+    expect(restored.tank.upgrades).toMatchObject({ digRadius: 7, digDamage: 3, digSpeed: 3 });
+    expect(restored.digCooldown).toBe(0.14);
+    expect(restored.strikeTime).toBe(0.02);
+    expect(restored.world.water).toEqual(session.world.water);
+    expect(restored.tank.water + restored.delivered + totalWater(restored.world)).toBeCloseTo(restored.initialWater, 5);
+  });
+
+  it('rejects over-cap mining levels and corrupt pick timers while accepting an older slower swing after a speed purchase', () => {
+    for (const [id, level] of [['digRadius', 8], ['digDamage', 4], ['digSpeed', 4]] as const) {
+      expect(() => deserializeSession(corrupt(data => data.session.tank.upgrades[id] = level))).toThrow(/upgrade level/);
+    }
+    for (const [key, value] of [['digCooldown', 0.49], ['strikeTime', 0.13], ['strikeTime', -0.5]] as const) {
+      expect(() => deserializeSession(corrupt(data => data.session[key] = value))).toThrow(/pick timing/);
+    }
+    const session = stockedSession();
+    setDevCredits(session, 1000);
+    buyUpgrade(session.tank, 'digSpeed');
+    session.digCooldown = 0.44; session.strikeTime = 0.10;
+    expect(deserializeSession(serializeSession(session)).digCooldown).toBe(0.44);
   });
 
   it('rejects unsupported walking step heights instead of restoring an unbounded movement setting', () => {

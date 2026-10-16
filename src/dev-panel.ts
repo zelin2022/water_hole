@@ -1,4 +1,4 @@
-import { MAX_DEV_CREDITS, setDevCredits, setOmniVision, setStepHeight } from './game/dev-tools';
+import { MAX_DEV_CREDITS, setDevCredits, setOmniVision, teleportToHopper } from './game/dev-tools';
 import type { Session } from './game/session';
 
 interface DevPanelActions {
@@ -15,7 +15,6 @@ export class DevPanel {
       const input = event.target as HTMLInputElement;
       if (!actions.isOpen()) return;
       if (input.id === 'dev-omni-vision' && setOmniVision(actions.session(), input.checked)) actions.changed();
-      else if (input.id === 'dev-step-height' && setStepHeight(actions.session(), Number(input.value) as 1 | 2)) actions.changed();
     });
     panel.addEventListener('submit', event => {
       if (!actions.isOpen() || (event.target as HTMLFormElement).id !== 'dev-credits-form') return;
@@ -30,7 +29,17 @@ export class DevPanel {
       this.feedback(`Credits set to ${actions.session().tank.credits.toLocaleString('en', { maximumFractionDigits: 10 })} cr.`);
     });
     panel.addEventListener('click', event => {
-      if (actions.isOpen() && (event.target as HTMLElement).closest('[data-dev-close]')) actions.close();
+      if (!actions.isOpen()) return;
+      const target = event.target as HTMLElement;
+      if (target.closest('[data-dev-close]')) actions.close();
+      else if (target.closest('[data-dev-teleport]')) {
+        if (!teleportToHopper(actions.session())) {
+          this.feedback(actions.session().completed ? 'This demo has ended.' : 'No clear space near the hopper. Teleport cancelled.');
+          return;
+        }
+        actions.changed();
+        this.feedback('Player moved to the hopper.');
+      }
     });
   }
 
@@ -39,9 +48,9 @@ export class DevPanel {
     return `<span class="eyebrow">PROVISIONAL TOOLS</span><h1>Dev panel</h1>
       <p class="panel-intro">Changes apply to this expedition. Gameplay is paused.</p>
       <label class="setting-row">Omni vision<input id="dev-omni-vision" type="checkbox" ${session.options.debugVision ? 'checked' : ''}></label>
-      <label class="setting-row">Auto-step height<select id="dev-step-height">${([1, 2] as const).map(cells => `<option value="${cells}" ${session.options.stepHeightCells === cells ? 'selected' : ''}>${cells} ${cells === 1 ? 'cell' : 'cells'} (${cells * session.world.cellSize} px)</option>`).join('')}</select></label>
       <form id="dev-credits-form"><label class="setting-row">Set credits to<input id="dev-credits" type="number" min="0" max="${MAX_DEV_CREDITS}" step="any" value="${session.tank.credits}" required></label>
         <button type="submit" class="primary-button">Set credits</button></form>
+      <button type="button" data-dev-teleport class="menu-button">Teleport to hopper</button>
       <p id="dev-feedback" class="small-note" role="status" aria-live="polite"></p>
       <div class="panel-actions"><button type="button" data-dev-close class="menu-button">Close panel</button></div>
       <p class="small-note">Backtick or Escape closes this panel.</p>`;

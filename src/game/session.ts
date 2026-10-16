@@ -74,7 +74,7 @@ export function createSession(options: SessionOptions = {}): Session {
     surfaceY: site.surfaceY,
     seed,
     options: { seed, caveMemory: 'sonar', headlamp: 'mouse', waterDistribution,
-      debugVision: options.debugVision ?? false, stepHeightCells: options.stepHeightCells ?? DEFAULT_STEP_HEIGHT_CELLS },
+      debugVision: options.debugVision ?? false, stepHeightCells: DEFAULT_STEP_HEIGHT_CELLS },
     delivered: 0, devCreditAdjustment: 0, time: 0, completed: false,
     initialWater: totalWater(site.world),
     digCooldown: 0, strikeTime: -1, lastStrike: null,
@@ -97,6 +97,7 @@ export function nearHopper(session: Session): boolean {
 
 /** Distinct swing and impact clocks keep held digging from becoming continuous removal. */
 function stepDigging(session: Session, input: GameInput, dt: number): void {
+  const stats = upgradeStats(session.tank);
   session.digCooldown = Math.max(0, session.digCooldown - dt);
   const canDig = input.digging && (!session.player.wall || session.tank.upgrades.wallDig > 0);
   if (!canDig) {
@@ -104,13 +105,12 @@ function stepDigging(session: Session, input: GameInput, dt: number): void {
     return;
   }
   if (session.strikeTime < 0 && session.digCooldown === 0) {
-    session.strikeTime = DIG_WINDUP;
-    session.digCooldown = DIG_INTERVAL;
+    session.strikeTime = stats.digWindup;
+    session.digCooldown = stats.digInterval;
   }
   if (session.strikeTime < 0) return;
   session.strikeTime -= dt;
   if (session.strikeTime > 0) return;
-  const stats = upgradeStats(session.tank);
   const result = damageStrike(session.world, playerCenter(session), input.aim, stats.digRadius, stats.digDamage, session.facing);
   if (result.removed > 0) {
     // Any newly detached island must touch a removed cell in the pick's reach.

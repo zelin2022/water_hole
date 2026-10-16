@@ -4,9 +4,11 @@ import { World } from './world';
 import { totalWater } from './water';
 import { detachSmallDirt, DIRT_TERMINAL_SPEED } from './dirt';
 import { DEFAULT_STEP_HEIGHT_CELLS } from './player';
+import { MATERIAL_DURABILITY } from './digging';
 
 export const SAVE_VERSION = 1;
 const MAX_CELLS = 1024 * 1024;
+const MAX_TERRAIN_DAMAGE = Math.max(...Object.values(MATERIAL_DURABILITY).filter(Number.isFinite));
 
 export function serializeSession(session: Session): string {
   const { world, explored, ...state } = session;
@@ -49,7 +51,7 @@ export function deserializeSession(json: string): Session {
   const count = raw.width * raw.height;
   assert(numericArray(raw.solid, count, 0, 1, true), 'solid cells');
   assert(numericArray(raw.material, count, 0, 3, true), 'terrain materials');
-  assert(numericArray(raw.damage, count, 0, 3), 'terrain damage');
+  assert(numericArray(raw.damage, count, 0, MAX_TERRAIN_DAMAGE), 'terrain damage');
   assert(numericArray(raw.water, count, 0, 1.000001), 'liquid cells');
   assert(numericArray(state.explored, count, 0, 1, true), 'exploration');
   for (let index = 0; index < count; index++) {
@@ -60,7 +62,7 @@ export function deserializeSession(json: string): Session {
     assert(!raw.solid[index] || raw.water[index] === 0, 'water inside terrain');
     assert(raw.solid[index] || raw.damage[index] === 0, 'damage in empty space');
     assert(raw.material[index] !== 3 || raw.damage[index] === 0, 'damaged foundation');
-    assert(raw.damage[index] < (raw.material[index] === 2 ? 3 : 1), 'broken terrain left solid');
+    assert(raw.damage[index] < (MATERIAL_DURABILITY[raw.material[index]] ?? 1), 'broken terrain left solid');
   }
   const extentX = raw.width * raw.cellSize, extentY = raw.height * raw.cellSize;
   let fallingDirt = state.fallingDirt === undefined ? [] : state.fallingDirt;
@@ -74,8 +76,8 @@ export function deserializeSession(json: string): Session {
     && ['remembered', 'sonar'].includes(state.options.caveMemory)
     && ['character', 'mouse'].includes(state.options.headlamp)
     && typeof state.options.debugVision === 'boolean', 'comparison options');
-  const stepHeightCells = state.options.stepHeightCells === undefined ? DEFAULT_STEP_HEIGHT_CELLS : state.options.stepHeightCells;
-  assert(stepHeightCells === 1 || stepHeightCells === 2, 'comparison options');
+  const savedStepHeight = state.options.stepHeightCells === undefined ? DEFAULT_STEP_HEIGHT_CELLS : state.options.stepHeightCells;
+  assert(savedStepHeight === 1 || savedStepHeight === 2, 'comparison options');
   // Keep earlier v1 worlds and exploration intact, while normalizing retired
   // cave-memory/headlamp comparisons and missing water-preset metadata. An old
   // site's explicit distribution remains metadata for its serialized layout;
@@ -109,8 +111,9 @@ export function deserializeSession(json: string): Session {
     && typeof tank.upgraded === 'boolean', 'tank');
   const upgradeIds = new Set(UPGRADE_DEFINITIONS.map(definition => definition.id));
   assert(Object.keys(tank.upgrades).every(id => upgradeIds.has(id as keyof Tank['upgrades'])), 'upgrade entries');
-  // Only the newly reserved scanner may be absent from earlier v1 equipment.
+  // Earlier v1 equipment predates the reserved scanner and mining speed tiers.
   if (tank.upgrades.subsurfaceScanner === undefined) tank.upgrades.subsurfaceScanner = 0;
+  if (tank.upgrades.digSpeed === undefined) tank.upgrades.digSpeed = 0;
   assert(Object.keys(tank.upgrades).length === UPGRADE_DEFINITIONS.length, 'upgrade entries');
   for (const definition of UPGRADE_DEFINITIONS) {
     const level = tank.upgrades[definition.id];
@@ -144,6 +147,6 @@ export function deserializeSession(json: string): Session {
   // completed runs retain their frozen terrain and new saves keep their debris.
   if (state.fallingDirt === undefined && !state.completed) fallingDirt = detachSmallDirt(world);
   return { ...state, world, fallingDirt, devCreditAdjustment, subsurfaceScan, lastSubsurfaceScanAt,
-    options: { ...state.options, stepHeightCells, waterDistribution, caveMemory: 'sonar', headlamp: 'mouse' },
+    options: { ...state.options, stepHeightCells: DEFAULT_STEP_HEIGHT_CELLS, waterDistribution, caveMemory: 'sonar', headlamp: 'mouse' },
     explored: Uint8Array.from(state.explored) } as Session;
 }

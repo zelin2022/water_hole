@@ -38,10 +38,27 @@ describe('pickaxe geometry and damage', () => {
     expect(world.isSolid(13, 7)).toBe(true);
     expect(damageStrike(world, origin, aim, 12, 1)).toMatchObject({ damaged: 1, removed: 0 });
     expect(world.damage[cell]).toBe(2);
+    for (let strike = 3; strike < 6; strike++) {
+      expect(damageStrike(world, origin, aim, 12, 1)).toMatchObject({ damaged: 1, removed: 0 });
+      expect(world.damage[cell]).toBe(strike);
+      expect(world.isSolid(13, 7)).toBe(true);
+    }
     expect(damageStrike(world, origin, aim, 12, 1)).toMatchObject({ damaged: 1, removed: 1 });
     expect(world.isSolid(13, 7)).toBe(false);
     expect(world.material[cell]).toBe(0);
     expect(world.damage[cell]).toBe(0);
+  });
+
+  it.each([[1, 6], [2, 3], [3, 2], [6, 1]])('makes damage %i break stone in exactly %i isolated impacts', (damage, impacts) => {
+    const world = new World(30, 20);
+    world.setMaterial(13, 7, 2);
+    const cell = world.index(13, 7);
+    for (let impact = 1; impact <= impacts; impact++) {
+      const result = damageStrike(world, { x: 30, y: 30 }, { x: 100, y: 30 }, 12, damage);
+      expect(result.removed).toBe(impact === impacts ? 1 : 0);
+      expect(world.isSolid(13, 7)).toBe(impact < impacts);
+      expect(world.damage[cell]).toBe(impact === impacts ? 0 : impact * damage);
+    }
   });
 
   it('breaks earth in one hit without removing water or boundary cells', () => {

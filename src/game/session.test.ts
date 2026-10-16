@@ -64,28 +64,22 @@ describe('demo session', () => {
     }
   });
 
-  it('defaults to two-cell walking steps and preserves the one-cell comparison', () => {
+  it('resolves walking steps to two cells even for a retired one-cell comparison caller', () => {
     expect(createSession().options.stepHeightCells).toBe(2);
-    expect(createSession({ stepHeightCells: 1 }).options.stepHeightCells).toBe(1);
+    expect(createSession({ stepHeightCells: 1 }).options.stepHeightCells).toBe(2);
   });
 
-  it('uses the selected walking step height during ordinary session simulation', () => {
-    const oneCell = fixture(), twoCells = fixture();
-    oneCell.options.stepHeightCells = 1;
-    twoCells.options.stepHeightCells = 2;
-    for (const session of [oneCell, twoCells]) {
-      for (let x = 24; x < 40; x++) {
-        session.world.setSolid(x, 28, true);
-        session.world.setSolid(x, 29, true);
-      }
-      advance(session, 0.15, { right: true });
+  it('walks up a two-cell step during ordinary session simulation without attaching', () => {
+    const session = fixture();
+    for (let x = 24; x < 40; x++) {
+      session.world.setSolid(x, 28, true);
+      session.world.setSolid(x, 29, true);
     }
-    expect(oneCell.player.x).toBe(80);
-    expect(oneCell.player.y).toBe(88);
-    expect(twoCells.player.x).toBeGreaterThan(80);
-    expect(twoCells.player.y).toBe(80);
-    expect(twoCells.player.grounded).toBe(true);
-    expect(twoCells.player.wall).toBe(0);
+    advance(session, 0.15, { right: true });
+    expect(session.player.x).toBeGreaterThan(80);
+    expect(session.player.y).toBe(80);
+    expect(session.player.grounded).toBe(true);
+    expect(session.player.wall).toBe(0);
   });
 
   it('starts a reproducible site with comparison choices preserved', () => {
@@ -147,6 +141,50 @@ describe('demo session', () => {
     const impact = session.lastStrike;
     advance(session, 0.2, { digging: true, aim: { x: 300, y: 104 } });
     expect(session.lastStrike).toBe(impact);
+  });
+
+  it('applies faster upgrades as discrete swings with shorter wind-up instead of continuous digging', () => {
+    const session = fixture();
+    session.tank.credits = 100;
+    for (let level = 0; level < 3; level++) expect(buyUpgrade(session.tank, 'digSpeed')).toBe(true);
+    const digging = { ...idle, digging: true, aim: { x: 300, y: 104 } };
+    stepSession(session, digging, 0.01);
+    stepSession(session, digging, 0.01);
+    expect(session.lastStrike).toBeNull();
+    stepSession(session, digging, 0.01);
+    stepSession(session, digging, 0.01);
+    const firstImpact = session.lastStrike;
+    expect(firstImpact).not.toBeNull();
+    for (let frame = 0; frame < 12; frame++) stepSession(session, digging, 0.01);
+    expect(session.lastStrike).toBe(firstImpact);
+    for (let frame = 0; frame < 4; frame++) stepSession(session, digging, 0.01);
+    expect(session.lastStrike).not.toBe(firstImpact);
+    expect(session.lastStrike!.time - firstImpact!.time).toBeCloseTo(0.16, 6);
+  });
+
+  it('makes end-level strikes excavate a much wider bite through hard terrain while conserving water and foundation', () => {
+    const ordinary = fixture(), showcase = fixture();
+    for (const session of [ordinary, showcase]) {
+      for (let y = 4; y < 30; y++) {
+        for (let x = 24; x < 60; x++) session.world.setMaterial(x, y, 2);
+      }
+      session.world.setMaterial(30, 22, 3);
+      session.world.water[session.world.index(18, 29)] = 0.75;
+      session.initialWater = totalWater(session.world);
+      session.tank.credits = 1000;
+      for (let level = 0; level < 3; level++) buyUpgrade(session.tank, 'digDamage');
+    }
+    for (let level = 0; level < 7; level++) buyUpgrade(showcase.tank, 'digRadius');
+    advance(ordinary, 0.15, { digging: true, aim: { x: 300, y: 104 } });
+    advance(showcase, 0.15, { digging: true, aim: { x: 300, y: 104 } });
+    expect(showcase.lastStrike!.removed).toBeGreaterThan(ordinary.lastStrike!.removed * 8);
+    expect(showcase.world.isSolid(45, 26)).toBe(false);
+    expect(ordinary.world.isSolid(45, 26)).toBe(true);
+    for (const session of [ordinary, showcase]) {
+      expect(session.world.material[session.world.index(30, 22)]).toBe(3);
+      expect(session.world.damage[session.world.index(30, 22)]).toBe(0);
+      expect(totalWater(session.world) + session.tank.water + session.delivered).toBeCloseTo(session.initialWater, 5);
+    }
   });
 
   it('locks wall digging until its equipment purchase', () => {

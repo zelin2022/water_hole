@@ -5,7 +5,7 @@ The demo develops the excavation and water-selling loop into a presentable Steam
 ## Agreed gameplay changes
 
 - Attach to walls only while falling, never during the upward part of a jump. Require hand/torso contact backed by connected wall structure so foot-level ground bumps and isolated terrain cells do not catch the character. Dug faces need not be flat: held grips follow shallow recesses and protrusions using collision-checked horizontal adjustments. Preserve unlimited climbing, air steering, detachment, wall jumping, and protection against immediate reattachment, including getting over the top of a wall.
-- Grounded walking automatically steps up and follows down small terrain changes. Start with a two-cell limit (8 world pixels on the current grid), with a one-cell comparison in the dev panel. Check clearance throughout the step and require supporting ground at the destination. Keep walking grounded on small descents; jumping, airborne movement, larger cliffs, and wall climbing retain their normal physics.
+- Grounded walking automatically steps up and follows down small terrain changes. Two cells (8 world pixels on the current grid) is the selected limit; remove the one-cell developer comparison and normalize older one-cell saves to two cells. Check clearance throughout the step and require supporting ground at the destination. Keep walking grounded on small descents; jumping, airborne movement, larger cliffs, and wall climbing retain their normal physics.
 - Disable digging while attached to a wall initially. A purchased upgrade enables it.
 - Replace continuous excavation with discrete pickaxe strikes. Holding the dig input repeats swings; each impact applies terrain damage, with time between impacts.
 - Give terrain durability so harder material can require several strikes. Keep partial damage when leaving an area or saving.
@@ -110,8 +110,9 @@ The following selection is approved for the provisional build and remains subjec
 
 | Upgrade | Form |
 | --- | --- |
-| Digging radius | Repeatable levels |
-| Digging damage | Repeatable levels |
+| Digging radius | Seven purchases beyond base |
+| Digging damage | Three purchases beyond base |
+| Digging speed | Three purchases beyond base; reduces swing interval and proportionally scales wind-up |
 | Wall-climbing speed | Repeatable levels |
 | Water tank capacity | Repeatable levels |
 | Water detector radius | Repeatable levels; requires detector v1 |
@@ -119,7 +120,15 @@ The following selection is approved for the provisional build and remains subjec
 | Digging while attached to a wall | One purchase; disabled before purchase |
 | Cave sonar | One purchase; temporarily traces connected tunnel walls for navigation |
 
-Start with roughly one or two purchased levels per repeatable track, then tune the level counts, prices, effects, and water distribution together. These are provisional bounds, not final caps. The shop must show the current stat, purchase effect, price, and affordability.
+Mining deliberately reaches exaggerated capability within the demo. Other repeatable tracks retain their current two-purchase bounds. The shop must show the current stat, purchase effect, price, and affordability. Values remain provisional.
+
+| Track | Base and successive values | Successive prices (cr) |
+| --- | --- | --- |
+| Radius (world pixels) | 12, 16, 20, 26, 34, 44, 58, 76 | 10, 15, 20, 25, 30, 35, 40 |
+| Damage per impact | 1, 2, 3, 6 | 10, 15, 25 |
+| Seconds between swings | 0.48, 0.34, 0.24, 0.16 | 10, 20, 30 |
+
+Wind-up is one quarter of the current swing interval. Stone has 6 durability, taking 6/3/2/1 impacts across the four damage tiers so every purchase reduces the required hits. Earth stays at 1 durability. All mining purchases total 285 credits; adding the first capacity upgrade and work harness brings that to 385, below the 400-water demo cutoff. Maximum upgrades must still respect terrain shielding, reinforced foundations, water accounting, and the requirement for a harness when digging on a wall. Existing radius/damage levels keep their stats and partial terrain damage; older saves without speed upgrades receive level zero.
 
 Hide unavailable upgrades, including unmet prerequisites and equipment with no remaining levels. Show eligible upgrades without enough funding with a red price such as "40 cr"; funded upgrades retain the install button. Keep the current prerequisites for this provisional build; the larger upgrade tree will be designed after the demo.
 
@@ -129,7 +138,6 @@ These proposals remain available for discussion without being added to the initi
 
 | Candidate | Original proposed behaviour |
 | --- | --- |
-| Faster digging rate | Repeatable upgrade that reduces time between discrete pickaxe impacts |
 | Higher jumping | Repeatable jump-height upgrade |
 | Water tank suction speed | Repeatable upgrade that increases water collection speed |
 | Headlamp width | Repeatable upgrade that widens the headlamp beam |
@@ -146,11 +154,11 @@ These proposals remain available for discussion without being added to the initi
 - Maintain material separation and substantial cut edges after arbitrary excavation, including awkward player-dug tunnels. Make water the visual centrepiece through readable volume, surfaces, and flow.
 - Include visible pickaxe impacts, head rotation for the mouse-directed lamp, and visible equipment changes for major upgrades at gameplay scale.
 - Use a distinct attached silhouette with hands gripping the wall and braced legs. Before the wall-dig upgrade the attached model has no wielded pickaxe; afterward it keeps one hand gripping and wields the pickaxe with the other.
-- Add background music and SFX for core actions and feedback.
+- Keep the quiet original synthesized background music and SFX. Add compatible exploration and returning motifs that blend continuously with current tank fill, and lower/deeper layers with current depth. Use smooth transitions without song restarts at thresholds, retain phrase variation, and preserve independent music/SFX controls.
 - Provide New Game, Save, Load, Continue, pause, and settings. Settings include resolution/window size, windowed/fullscreen mode, audio, and keybindings.
-- Provisional builds include a backtick developer panel with omni vision, a set-credit-balance field, and a one-cell/two-cell walking-step comparison. Pause simulation while it is open, preserve tool changes in saves, and keep development credits separate from water delivered. Gate the panel and all visibility overrides behind `VITE_DEV_TOOLS`; release builds disable it and use the two-cell walking-step default. These are testing tools, not public-demo features.
+- Provisional builds include a backtick developer panel with omni vision, a set-credit-balance field, and teleport to the actual saved hopper. Teleport finds a clear nearby position, prefers floor support, resets motion and pending actions, and preserves terrain and resource ledgers. Allow a clear airborne destination for unsupported legacy hoppers; report failure when all nearby positions are blocked. Reject completed runs. Pause simulation while the panel is open, preserve tool changes in saves, and keep development credits separate from water delivered. Gate the panel and all visibility overrides behind `VITE_DEV_TOOLS`; release builds remove them. These are testing tools, not public-demo features.
 
-Proposed production bounds are two terrain materials with different durability, one looping music track, a small core sound set, and one local save slot with autosaving. Save data must include changed terrain and damage, water, inventory, credits, upgrades, exploration, comparison modes, and demo cutoff state.
+Proposed production bounds are two natural terrain materials with different durability plus reinforced infrastructure, one original adaptive synthesized score, a small core sound set, and one local save slot with autosaving. Save data must include changed terrain and damage, water, inventory, credits, upgrades, exploration, comparison modes, and demo cutoff state.
 
 ## Supporting work proposed for the demo
 
@@ -169,10 +177,12 @@ Test grounded stepping in both directions, ascent/descent caps, headroom, swept-
 
 Test the formula's adjacent ratios, normalized probabilities, sampling thresholds, and aggregate generated-pocket frequencies. Verify independent volume variation, inclusive class bounds, varying starter volumes with reliable initial reach, separation of maximum 240-unit pockets, and water conservation after liquid stepping. Playtest the new default and both legacy layouts, including selection and save/load restoration. Check that explored unlit caves stay dark before and after sonar fades, including when loading an older remembered-outline save. Check mouse-aimed lighting and visible head rotation, digging feel, readable darkness, discovery, movement, sound, menus, keybindings, and progression manually. Before finishing implementation changes, run `npm test` and `npm run build`, and playtest control/rendering changes in the browser or Electron.
 
+Verify all 7/3/3 mining purchases, capped prices, attainable total cost, discrete upgraded swing timing and animation, distinct stone hit counts, maximum-radius terrain shielding, and foundation/water preservation. Round-trip maximum equipment and partial stone damage; migrate absent speed metadata and one-cell saves. Test teleport support/clearance, legacy hopper placement, blocked/completed rejection, action resets, unchanged resource ledgers, autosaving, and removal from release bundles. Test smooth continuous audio scene weights, phrase variation, independent gain controls, silent startup, interrupted fades, skipped overdue beats, and node cleanup; playtest live tank/depth changes and music mute/pause.
+
 ## Provisional build tuning
 
-The first implementation uses a 400-unit cumulative delivery cutoff, 0.48 seconds between pickaxe swings with a 0.12-second wind-up, and 25 water units per second of hopper transfer. Earth durability is 1 and stone durability is 3. All are starting values for playtesting.
+The implementation uses a 400-unit cumulative delivery cutoff, 0.48 seconds between initial pickaxe swings with a 0.12-second wind-up, and 25 water units per second of hopper transfer. Speed purchases reduce both swing interval and wind-up, ending at 0.16/0.04 seconds. Earth durability is 1 and stone durability is 6. All are starting values for playtesting.
 
-Tune the core timings and delivery limit in `src/game/session.ts`, three-size volumes/probabilities in `src/game/water-pockets.ts`, reservoir placement and legacy budgets in `src/game/generation.ts`, upgrade effects/prices in `src/game/economy.ts`, material durability/reach in `src/game/digging.ts`, wall grip/contour tolerance and walking-step height in `src/game/player.ts`, and lighting/sonar in `src/game/vision.ts`. Held grips currently bridge up to 8 world pixels; walking steps default to two terrain cells; ambient lamp suppression is 0.85. New Game exposes the water-distribution choice; builds with developer tools enabled also expose full visibility and the backtick panel's live step-height comparison. `npm run build:release` and the `package:*:release` commands use `.env.release` to disable those tools. The current presentation and original synthesized audio are a first pass toward the art brief.
+Tune the core timings and delivery limit in `src/game/session.ts`, three-size volumes/probabilities in `src/game/water-pockets.ts`, reservoir placement and legacy budgets in `src/game/generation.ts`, upgrade effects/prices in `src/game/economy.ts`, material durability/reach in `src/game/digging.ts`, wall grip/contour tolerance and walking-step height in `src/game/player.ts`, and lighting/sonar in `src/game/vision.ts`. Held grips currently bridge up to 8 world pixels; walking steps use two terrain cells; ambient lamp suppression is 0.85. Music phrases, scene weights, and blend time live in `src/music.ts`, with audio scheduling and gain ramps in `src/audio.ts`. New Game exposes the water-distribution choice; builds with developer tools enabled also expose full visibility and the backtick panel's teleport and credit controls. `npm run build:release` and the `package:*:release` commands use `.env.release` to disable those tools. The current presentation and original synthesized audio are a first pass toward the art brief.
 
 Standalone Windows packaging is available. Native macOS packaging/QA, final balance and art refinement, and the [Steam release preparation](STEAM_DEMO_RELEASE.md) remain before the public demo release.

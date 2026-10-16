@@ -1,7 +1,7 @@
 import { type Point, type World } from './world';
 
 export const DIG_REACH_PADDING = 12;
-export const MATERIAL_DURABILITY: Readonly<Record<number, number>> = { 1: 1, 2: 3, 3: Infinity };
+export const MATERIAL_DURABILITY: Readonly<Record<number, number>> = { 1: 1, 2: 6, 3: Infinity };
 
 export interface StrikeResult {
   damaged: number;

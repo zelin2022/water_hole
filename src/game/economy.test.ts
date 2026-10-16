@@ -76,24 +76,24 @@ describe('equipment purchases', () => {
     const tank = createTank();
     expect(upgradeAvailability(tank, 'digRadius')).toBe('unaffordable');
     expect(canBuyUpgrade(tank, 'digRadius')).toBe(false);
-    tank.credits = 40;
+    tank.credits = 10;
     expect(upgradeAvailability(tank, 'digRadius')).toBe('available');
     expect(canBuyUpgrade(tank, 'digRadius')).toBe(true);
     expect(buyUpgrade(tank, 'digRadius')).toBe(true);
     expect(upgradeAvailability(tank, 'digRadius')).toBe('unaffordable');
-    tank.credits = 100;
+    tank.credits = 15;
     expect(upgradeAvailability(tank, 'digRadius')).toBe('available');
     buyUpgrade(tank, 'digRadius');
-    expect(upgradeAvailability(tank, 'digRadius')).toBe('unavailable');
+    expect(upgradeAvailability(tank, 'digRadius')).toBe('unaffordable');
   });
 
   it('uses the same finite-balance and roundoff tolerance for shop funding and purchases', () => {
     const tank = createTank();
-    tank.credits = 40 - CREDIT_EPSILON / 2;
+    tank.credits = 10 - CREDIT_EPSILON / 2;
     expect(upgradeAvailability(tank, 'digRadius')).toBe('available');
     expect(buyUpgrade(tank, 'digRadius')).toBe(true);
     expect(tank.credits).toBe(0);
-    tank.credits = 100 - CREDIT_EPSILON * 2;
+    tank.credits = 15 - CREDIT_EPSILON * 2;
     expect(upgradeAvailability(tank, 'digRadius')).toBe('unaffordable');
     expect(canBuyUpgrade(tank, 'digRadius')).toBe(false);
     for (const credits of [NaN, Infinity, -Infinity]) {
@@ -134,5 +134,39 @@ describe('equipment purchases', () => {
     const tank = createTank(); tank.credits = 500;
     buyUpgrade(tank, 'digRadius'); buyUpgrade(tank, 'digDamage'); buyUpgrade(tank, 'climbSpeed');
     expect(upgradeStats(tank)).toMatchObject({ digRadius: 16, digDamage: 2, climbSpeed: 90, capacity: 20 });
+  });
+
+  it('offers seven radius, three damage and three speed purchases without changing water or overcharging capped equipment', () => {
+    const tank = createTank(); tank.water = 12; tank.credits = 1000;
+    const progression = [
+      ['digRadius', 'digRadius', [12, 16, 20, 26, 34, 44, 58, 76]],
+      ['digDamage', 'digDamage', [1, 2, 3, 6]],
+      ['digSpeed', 'digInterval', [0.48, 0.34, 0.24, 0.16]],
+    ] as const;
+    for (const [id, stat, values] of progression) {
+      expect(upgradeStats(tank)[stat]).toBe(values[0]);
+      for (const value of values.slice(1)) {
+        expect(buyUpgrade(tank, id)).toBe(true);
+        expect(upgradeStats(tank)[stat]).toBe(value);
+      }
+      const credits = tank.credits;
+      expect(buyUpgrade(tank, id)).toBe(false);
+      expect(upgradeAvailability(tank, id)).toBe('unavailable');
+      expect(tank.credits).toBe(credits);
+    }
+    expect(tank.water).toBe(12);
+    expect(tank.capacity).toBe(20);
+    expect(tank.credits).toBe(715);
+    expect(upgradeStats(tank).digWindup).toBe(0.04);
+  });
+
+  it('makes the full mining showcase, first capacity upgrade and harness attainable before the 400-water demo wall', () => {
+    const tank = createTank(); tank.credits = 399;
+    for (const id of ['digRadius', 'digDamage', 'digSpeed', 'capacity', 'wallDig'] as const) {
+      const levels = id === 'capacity' ? 1 : UPGRADE_DEFINITIONS.find(definition => definition.id === id)!.costs.length;
+      for (let level = 0; level < levels; level++) expect(buyUpgrade(tank, id)).toBe(true);
+    }
+    expect(tank.upgrades).toMatchObject({ digRadius: 7, digDamage: 3, digSpeed: 3, capacity: 1, wallDig: 1 });
+    expect(tank.credits).toBe(14);
   });
 });
