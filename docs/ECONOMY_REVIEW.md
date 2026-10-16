@@ -1,6 +1,6 @@
 # Demo economy review
 
-The first release-candidate balance pass uses a **600-water delivery cutoff for new expeditions**, leaving upgrade prices and water generation unchanged. This is a provisional setting based on purchase and supply arithmetic; it does not establish a playtime target. The previous 400 cutoff can end the run before a player has much opportunity to use a completed showcase track. Existing saves retain their original 400-water ending, whether active or already completed; the cutoff is now stored per expedition.
+The first release-candidate balance pass uses a **600-water delivery cutoff for new expeditions**, leaving upgrade prices and water generation unchanged. The numerical audit is complete; final upgrade economy tuning remains a pre-release task. This is a provisional setting based on purchase and supply arithmetic; it does not establish a playtime target. The previous 400 cutoff can end the run before a player has much opportunity to use a completed showcase track. Existing saves retain their original 400-water ending, whether active or already completed; the cutoff is now stored per expedition.
 
 ## Reproduce the audit
 
@@ -50,4 +50,6 @@ Eleven sampled starters are dry. Reproducible dry-start examples include seeds *
 
 ## Limits and follow-up
 
-This analysis does not measure enjoyment, difficulty, actual return time, or whether the controls teach themselves. It assumes players can discover and collect the generated water. The release should remain a bounded demo with a thank-you ending; artifact searching and additional cave systems remain full-version work. Use reports from the released demo to adjust prices or pacing in a small follow-up patch before expanding the feature set.
+This analysis does not measure enjoyment, difficulty, actual return time, or whether the controls teach themselves. It assumes players can discover and collect the generated water. Before release, complete normal playthroughs without developer credits, including wet and dry starts. Assess early purchase pacing, collection and return trips, meaningful equipment tradeoffs, and whether a mining-focused run reaches its extreme upgrades with enough play left to use them. Tune prices, upgrade effects, or the delivery cutoff as needed and confirm the final balance. This is separate from the completed arithmetic audit.
+
+The release should remain a bounded demo with a thank-you ending; artifact searching and additional cave systems remain full-version work. Reports from the released demo can inform further small balance patches after this initial tuning pass.
