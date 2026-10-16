@@ -1,0 +1,14 @@
+[Unit]
+Description=Water Hole feedback resource budget
+
+[Slice]
+CPUAccounting=yes
+MemoryAccounting=yes
+IOAccounting=yes
+CPUQuota=50%
+CPUWeight=25
+IOWeight=25
+MemoryHigh=192M
+MemoryMax=256M
+MemorySwapMax=0
+TasksMax=256
