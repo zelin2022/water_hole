@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { World } from './world';
+import { buyUpgrade, createTank, upgradeStats } from './economy';
 import {
   computeDaylight, createVision, pingSonar, sonarOpacity, sonarTravelDistance, updateVision,
   pingSubsurfaceScanner, subsurfaceScannerOpacity,
   SONAR_COOLDOWN, SONAR_TRAVEL_TIME, SONAR_OUTLINE_LIFETIME,
+  HEADLAMP_RANGE, HEADLAMP_HALF_ANGLE, TORSO_LIGHT_RADIUS,
 } from './vision';
 
 function undergroundRoom(width = 100, height = 50): World {
@@ -87,6 +89,58 @@ describe('daylight responding to excavated geometry', () => {
 });
 
 describe('local lamps and exploration', () => {
+  it('starts with 30% less beam depth and 10% less cone width, retaining the torso radius', () => {
+    expect(HEADLAMP_RANGE).toBeCloseTo(180 * 0.7, 10);
+    expect(HEADLAMP_HALF_ANGLE).toBeCloseTo(Math.PI / 5 * 0.9, 10);
+    expect(TORSO_LIGHT_RADIUS).toBe(55);
+  });
+
+  it.each([[85, 50, 'depth'], [71, 64, 'width']] as const)('keeps cells beyond the reduced base beam %s/%s dark (%s)', (x, y, _property) => {
+    const world = undergroundRoom(140, 110), state = createVision(world);
+    updateVision(world, state, {
+      position: { x: 202, y: 202 }, aim: { x: 500, y: 202 }, facing: 1, time: 0, torsoRadius: 0,
+    });
+    expect(state.lamplight[world.index(78, 50)]).toBeGreaterThan(0);
+    expect(state.visible[world.index(x, y)]).toBe(0);
+    expect(state.lamplight[world.index(x, y)]).toBe(0);
+  });
+
+  it.each([
+    ['torsoLamp', [35, 50], [32, 50]],
+    ['headlampDepth', [85, 50], [92, 50]],
+    ['headlampWidth', [71, 66], [70, 68]],
+  ] as const)('illuminates progressively farther cells only after each %s purchase', (id, first, second) => {
+    const world = undergroundRoom(140, 110), state = createVision(world), tank = createTank();
+    tank.credits = 100;
+    const illuminate = () => updateVision(world, state, {
+      position: { x: 202, y: 202 }, aim: { x: 500, y: 202 }, facing: 1, time: 0, ...upgradeStats(tank),
+    });
+    illuminate();
+    for (const cell of [first, second]) expect(state.visible[world.index(cell[0], cell[1])]).toBe(0);
+    expect(buyUpgrade(tank, id)).toBe(true); illuminate();
+    expect(state.visible[world.index(first[0], first[1])]).toBe(1);
+    expect(state.visible[world.index(second[0], second[1])]).toBe(0);
+    expect(buyUpgrade(tank, id)).toBe(true); illuminate();
+    expect(state.visible[world.index(second[0], second[1])]).toBe(1);
+  });
+
+  it('keeps maximum lamps blocked by terrain and sealed water hidden', () => {
+    const world = undergroundRoom(140, 110), state = createVision(world), tank = createTank();
+    tank.credits = 1000;
+    for (const id of ['torsoLamp', 'headlampWidth', 'headlampDepth'] as const) {
+      expect(buyUpgrade(tank, id)).toBe(true); expect(buyUpgrade(tank, id)).toBe(true);
+    }
+    for (let y = 3; y < world.height - 3; y++) world.setSolid(65, y, true);
+    world.water[world.index(66, 50)] = 1;
+    updateVision(world, state, {
+      position: { x: 202, y: 202 }, aim: { x: 500, y: 202 }, facing: 1, time: 0, ...upgradeStats(tank),
+    });
+    expect(state.lamplight[world.index(65, 50)]).toBeGreaterThan(0);
+    expect(state.lamplight[world.index(66, 50)]).toBe(0);
+    expect(state.visible[world.index(66, 50)]).toBe(0);
+    expect(state.explored[world.index(66, 50)]).toBe(0);
+  });
+
   it('keeps independent moon and warm-lamp fields, with lamps only increasing total brightness', () => {
     const world = new World(40, 40, 4);
     for (let y = 10; y < 39; y++) {

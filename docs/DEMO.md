@@ -102,6 +102,8 @@ Unlit environment is opaque darkness: cave space, rock, water, and their physica
 
 Player lamps become subdued where ambient light is stronger, restoring their strength as the surroundings darken. Evaluate this at each illuminated surface, so a headlamp aimed from daylight into a dark tunnel still works. The blend must not create a dark dip on the way toward the surface.
 
+Starting headlamp depth is 126 world pixels, reduced by 30% from 180. Its full cone angle is 64.8 degrees, reduced by 10% from 72; the half-angle is 32.4 degrees. Torso illumination keeps its 55-pixel starting radius. Each property has two independent purchases that multiply the previous value by 1.2, giving a restrained 44% increase at level two. These purchases change beam geometry, preserving warm tint, terrain occlusion, and ambient suppression.
+
 ## Demo cutoff
 
 Cumulative water delivered to the machine triggers a demo limit. Treat this as the boundary of the available demo, rather than a mission, contract, or in-world victory objective. Spending earned credits does not reduce the delivered total.
@@ -122,6 +124,9 @@ The following selection is approved for the provisional build and remains subjec
 | Wall-climbing speed | Seven purchases beyond base |
 | Water tank capacity | Repeatable levels |
 | Water detector radius | Repeatable levels; requires detector v1 |
+| Torso-lamp radius | Two purchases beyond base; 20% more radius per level |
+| Headlamp width | Two purchases beyond base; 20% wider cone per level |
+| Headlamp depth | Two purchases beyond base; 20% longer range per level |
 | Water detector v1 | One purchase; points toward the closest water body within its radius, with no indicator when none is in range |
 | Digging while attached to a wall | One purchase; disabled before purchase |
 | Cave sonar | One purchase; temporarily traces connected tunnel walls for navigation |
@@ -135,6 +140,9 @@ Mining and traversal deliberately reach exaggerated capability within the demo. 
 | Seconds between swings | 0.48, 0.34, 0.24, 0.16 | 10, 20, 30 |
 | Ground/air jump launch (world pixels/second) | ~159, 350, 440, 540, 650, 780, 920, 1080 | 10, 15, 20, 25, 30, 35, 40 |
 | Wall-climbing speed (world pixels/second) | 75, 135, 200, 280, 350, 440, 550, 680 | 10, 15, 20, 25, 30, 35, 40 |
+| Torso-lamp radius (world pixels) | 55, 66, 79.2 | 20, 35 |
+| Headlamp full cone angle (degrees) | 64.8, 77.76, 93.312 | 20, 35 |
+| Headlamp depth (world pixels) | 126, 151.2, 181.44 | 20, 35 |
 
 Wind-up is one quarter of the current swing interval. Across damage tiers 1/2/3/6, earth takes 3/2/1/1 impacts, stone 6/3/2/1, basalt 10/5/4/2, and granite 16/8/6/3. Sand always breaks in one impact. All mining purchases total 285 credits; adding the first capacity upgrade and work harness brings that to 385, below the 400-water demo cutoff. Maximum upgrades must still respect terrain shielding, reinforced foundations, water accounting, and the requirement for a harness when digging on a wall. Existing radius/damage levels keep their stats and partial terrain damage; older saves without speed upgrades receive level zero.
 
@@ -144,6 +152,8 @@ Each complete jump or climbing track costs 175 credits; double jump costs 35. Wa
 
 Hide unavailable upgrades, including unmet prerequisites and equipment with no remaining levels. Show eligible upgrades without enough funding with a red price such as "40 cr"; funded upgrades retain the install button. Keep the current prerequisites for this provisional build; the larger upgrade tree will be designed after the demo.
 
+The three lamp tracks are available from the start with no prerequisite. Each complete track costs 55 credits; all lamp purchases total 165. Older saves without these entries receive level zero without changing terrain, water, credits, or other equipment. Save purchased lamp levels and restore their illumination; development omni vision stays independent of lamp equipment.
+
 ### Other upgrade ideas retained for tuning
 
 These proposals remain available for discussion without being added to the initial upgrade selection. Cave sonar is already included as a one-time navigation upgrade; its balance remains subject to tuning.
@@ -151,9 +161,6 @@ These proposals remain available for discussion without being added to the initi
 | Candidate | Original proposed behaviour |
 | --- | --- |
 | Water tank suction speed | Repeatable upgrade that increases water collection speed |
-| Headlamp width | Repeatable upgrade that widens the headlamp beam |
-| Headlamp depth | Repeatable upgrade that extends the headlamp beam |
-| Torso-lamp radius | Repeatable upgrade that increases surrounding illumination radius |
 | Sonar cooldown | Repeatable upgrade that reduces cooldown; requires sonar |
 | Water detector v2 | One-time purchase requiring v1; also indicates the water body's mass, with deeper colour for more water |
 | Subsurface scanner | Reserved and hidden; preserves the original penetrating cavity-outline scan pending further design |
@@ -188,6 +195,8 @@ Test grounded stepping in both directions, ascent/descent caps, headroom, swept-
 Test the formula's adjacent ratios, normalized probabilities, sampling thresholds, and aggregate generated-pocket frequencies. Verify independent volume variation, inclusive class bounds, varying starter volumes with reliable initial reach, separation of maximum 240-unit pockets, and water conservation after liquid stepping. Verify New Game always starts the three-size layout with normal vision, while loading legacy layouts preserves their saved worlds and metadata. Check that explored unlit caves stay dark before and after sonar fades, including when loading an older remembered-outline save. Check mouse-aimed lighting and visible head rotation, digging feel, readable darkness, discovery, movement, sound, menus, keybindings, and progression manually. Before finishing implementation changes, run `npm test` and `npm run build`, and playtest control/rendering changes in the browser or Electron.
 
 Verify all 7/3/3 mining purchases, capped prices, attainable mining cost, discrete upgraded swing timing and animation, distinct material hit counts, maximum-radius terrain shielding, and foundation/water preservation. Check relative-health damage stages, clipping to the damaged cell, concealment in darkness, and unchanged collision/water during rendering. Verify seven jump and climbing purchases, increasing actual jump height/launch speed, one air jump per ground/wall recharge, preserved base jump/lip heights with slower initial ascent, unchanged falling gravity, and optimized repeated wall/air-jump ascent no faster than matched-tier climbing on either side. Round-trip maximum equipment, spent jumps and partial damage in every natural material; migrate absent speed/jump metadata and one-cell saves. Verify compact-grid validation, lossless round trips, retained shallow version 1 dimensions, 2000-metre standing depth, deeper resource placement, sparse shallow sand, and bounded render buffers at the bottom. Test teleport support/clearance, legacy hopper placement, blocked/completed rejection, jump/action resets, unchanged resource ledgers, autosaving, and removal from release bundles. Test smooth continuous audio scene weights across the extended depth, phrase variation, independent gain controls, silent startup, interrupted fades, skipped overdue beats, and node cleanup; playtest live tank/depth changes and music mute/pause.
+
+Verify two purchases for each lamp track, 20% compounding geometry changes, capped levels/prices, affordability, and independent equipment effects. Round-trip lamp levels and migrate missing entries to zero while retaining the saved world and economy. Playtest the smaller starter beam and each upgraded lamp in darkness, through excavated passages, and near surface light; check that terrain still blocks illumination and omni vision does not change equipment.
 
 ## Provisional build tuning
 

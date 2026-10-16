@@ -147,11 +147,15 @@ export function deserializeSession(json: string): Session {
     && typeof tank.upgraded === 'boolean', 'tank');
   const upgradeIds = new Set(UPGRADE_DEFINITIONS.map(definition => definition.id));
   assert(Object.keys(tank.upgrades).every(id => upgradeIds.has(id as keyof Tank['upgrades'])), 'upgrade entries');
-  // Earlier v1 equipment predates the reserved scanner and mining speed tiers.
+  // Earlier saves predate some equipment. Missing entries receive base gear;
+  // existing levels still pass the same strict validation in both formats.
   if (tank.upgrades.subsurfaceScanner === undefined) tank.upgrades.subsurfaceScanner = 0;
   if (tank.upgrades.digSpeed === undefined) tank.upgrades.digSpeed = 0;
   if (tank.upgrades.jumpPower === undefined) tank.upgrades.jumpPower = 0;
   if (tank.upgrades.doubleJump === undefined) tank.upgrades.doubleJump = 0;
+  if (tank.upgrades.torsoLamp === undefined) tank.upgrades.torsoLamp = 0;
+  if (tank.upgrades.headlampWidth === undefined) tank.upgrades.headlampWidth = 0;
+  if (tank.upgrades.headlampDepth === undefined) tank.upgrades.headlampDepth = 0;
   assert(Object.keys(tank.upgrades).length === UPGRADE_DEFINITIONS.length, 'upgrade entries');
   for (const definition of UPGRADE_DEFINITIONS) {
     const level = tank.upgrades[definition.id];

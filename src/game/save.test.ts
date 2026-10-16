@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createSession, DEMO_DELIVERY_LIMIT, type SessionOptions } from './session';
-import { collectIntoTank, buyUpgrade } from './economy';
+import { collectIntoTank, buyUpgrade, upgradeStats } from './economy';
 import { totalWater } from './water';
 import { deserializeSession, serializeSession } from './save';
 import { setDevCredits, setOmniVision } from './dev-tools';
@@ -168,6 +168,75 @@ function corrupt(change: (data: any) => void) {
   change(data);
   return JSON.stringify(data);
 }
+
+describe('lamp equipment saves', () => {
+  const lampIds = ['torsoLamp', 'headlampWidth', 'headlampDepth'] as const;
+
+  it('retains both lamp purchases, their independent effects and the existing water ledger in compact saves', () => {
+    const session = stockedSession();
+    setDevCredits(session, 1000);
+    const base = upgradeStats(session.tank);
+    for (let level = 1; level <= 2; level++) {
+      for (const id of lampIds) expect(buyUpgrade(session.tank, id)).toBe(true);
+      const restored = deserializeSession(serializeSession(session));
+      expect(JSON.parse(serializeSession(restored)).version).toBe(2);
+      expect(restored.tank).toEqual(session.tank);
+      for (const id of lampIds) expect(restored.tank.upgrades[id]).toBe(level);
+      const stats = upgradeStats(restored.tank);
+      expect(stats.torsoRadius).toBeCloseTo(base.torsoRadius * 1.2 ** level, 8);
+      expect(stats.headlampHalfAngle).toBeCloseTo(base.headlampHalfAngle * 1.2 ** level, 8);
+      expect(stats.headlampRange).toBeCloseTo(base.headlampRange * 1.2 ** level, 8);
+      expect(restored.tank.credits).toBe(level === 1 ? 940 : 835);
+      expect(restored.delivered).toBe(session.delivered);
+      expect(restored.devCreditAdjustment).toBe(session.devCreditAdjustment);
+      expect(restored.world.water).toEqual(session.world.water);
+      expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(restored.initialWater, 5);
+    }
+  });
+
+  it.each([1, 2])('migrates earlier version %i saves to base lamps without replacing terrain, equipment or progress', version => {
+    const session = stockedSession();
+    expect(buyUpgrade(session.tank, 'detector')).toBe(true);
+    const earlier = JSON.parse(version === 1 ? serializeLegacySession(session) : serializeSession(session));
+    for (const id of lampIds) delete earlier.session.tank.upgrades[id];
+    const restored = deserializeSession(JSON.stringify(earlier));
+    for (const id of lampIds) expect(restored.tank.upgrades[id]).toBe(0);
+    expect(restored.tank).toEqual(session.tank);
+    expect(restored.world.width).toBe(session.world.width);
+    expect(restored.world.height).toBe(session.world.height);
+    expect(restored.world.cellSize).toBe(session.world.cellSize);
+    expect(restored.world.solid).toEqual(session.world.solid);
+    expect(restored.world.material).toEqual(session.world.material);
+    expect(restored.world.damage).toEqual(session.world.damage);
+    expect(restored.world.water).toEqual(session.world.water);
+    expect(restored.player).toEqual(session.player);
+    expect(restored.hopper).toEqual(session.hopper);
+    expect(restored.options).toEqual(session.options);
+    expect(restored.explored).toEqual(session.explored);
+    expect(restored.delivered).toBe(session.delivered);
+    expect(restored.devCreditAdjustment).toBe(session.devCreditAdjustment);
+    expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(restored.initialWater, 5);
+  });
+
+  it.each([1, 2])('rejects malformed or excessive lamp levels in version %i without treating them as absent equipment', version => {
+    const session = createShallowSession({ seed: 42 });
+    const original = version === 1 ? serializeLegacySession(session) : serializeSession(session);
+    for (const id of lampIds) {
+      for (const level of [-1, 0.5, 3, null, '1', Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+        const data = JSON.parse(original);
+        data.session.tank.upgrades[id] = level;
+        expect(() => deserializeSession(JSON.stringify(data))).toThrow(/upgrade level/);
+      }
+    }
+  });
+
+  it('still rejects unknown equipment while migrating absent lamps', () => {
+    expect(() => deserializeSession(corrupt(data => {
+      for (const id of lampIds) delete data.session.tank.upgrades[id];
+      data.session.tank.upgrades.unknownLamp = 0;
+    }))).toThrow(/upgrade entries/);
+  });
+});
 
 describe('versioned local saves', () => {
   it('round-trips heavily damaged stone while keeping its remaining durability and terrain intact', () => {

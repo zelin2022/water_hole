@@ -1,8 +1,9 @@
 import type { Point, World } from './world';
 import { collectWater } from './water';
 import { BASE_CLIMB_SPEED, BASE_JUMP_GRAVITY, BASE_JUMP_SPEED, FALL_GRAVITY } from './player';
+import { HEADLAMP_HALF_ANGLE, HEADLAMP_RANGE, TORSO_LIGHT_RADIUS } from './vision';
 
-export type UpgradeId = 'digRadius' | 'digDamage' | 'digSpeed' | 'jumpPower' | 'doubleJump' | 'climbSpeed' | 'capacity' | 'detector' | 'detectorRange' | 'wallDig' | 'sonar' | 'subsurfaceScanner';
+export type UpgradeId = 'digRadius' | 'digDamage' | 'digSpeed' | 'jumpPower' | 'doubleJump' | 'climbSpeed' | 'capacity' | 'detector' | 'detectorRange' | 'wallDig' | 'torsoLamp' | 'headlampWidth' | 'headlampDepth' | 'sonar' | 'subsurfaceScanner';
 export type UpgradeAvailability = 'unavailable' | 'unaffordable' | 'available';
 export interface UpgradeDefinition {
   id: UpgradeId;
@@ -24,6 +25,9 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   { id: 'detector', name: 'Water detector', description: 'Point toward nearby water within 160 units.', costs: [25] },
   { id: 'detectorRange', name: 'Detector amplifier', description: 'Increase the water detection radius.', costs: [45, 95], requires: 'detector' },
   { id: 'wallDig', name: 'Wall work harness', description: 'Use the pick while attached to a wall.', costs: [40] },
+  { id: 'torsoLamp', name: 'Torso lamp', description: 'Increase the torso light radius by 20% per level.', costs: [20, 35] },
+  { id: 'headlampWidth', name: 'Wider headlamp', description: 'Widen the headlamp cone by 20% per level.', costs: [20, 35] },
+  { id: 'headlampDepth', name: 'Deeper headlamp', description: 'Extend the headlamp beam depth by 20% per level.', costs: [20, 35] },
   { id: 'sonar', name: 'Cave sonar', description: 'Trace connected tunnel outlines; terrain blocks the pulse.', costs: [30] },
   { id: 'subsurfaceScanner', name: 'Subsurface scanner', description: 'Penetrate terrain to trace sealed cavities and water pockets.', costs: [30], hidden: true },
 ];
@@ -62,6 +66,9 @@ export function upgradeStats(tank: Tank) {
     climbSpeed: CLIMB_SPEEDS[tank.upgrades.climbSpeed],
     capacity: [20, 40, 60][tank.upgrades.capacity],
     detectorRadius: tank.upgrades.detector ? [160, 240, 320][tank.upgrades.detectorRange] : 0,
+    torsoRadius: TORSO_LIGHT_RADIUS * 1.2 ** tank.upgrades.torsoLamp,
+    headlampHalfAngle: HEADLAMP_HALF_ANGLE * 1.2 ** tank.upgrades.headlampWidth,
+    headlampRange: HEADLAMP_RANGE * 1.2 ** tank.upgrades.headlampDepth,
   };
 }
 

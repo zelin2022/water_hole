@@ -45,6 +45,53 @@ describe('tank and incremental sales', () => {
 });
 
 describe('equipment purchases', () => {
+  it('starts with a 30% shorter, 10% narrower headlamp and the original torso light radius', () => {
+    const stats = upgradeStats(createTank());
+    expect(stats.headlampRange).toBeCloseTo(180 * 0.7, 10);
+    expect(stats.headlampHalfAngle).toBeCloseTo(Math.PI / 5 * 0.9, 10);
+    expect(stats.torsoRadius).toBe(55);
+  });
+
+  it.each([
+    ['torsoLamp', 'torsoRadius', 55],
+    ['headlampWidth', 'headlampHalfAngle', Math.PI / 5 * 0.9],
+    ['headlampDepth', 'headlampRange', 180 * 0.7],
+  ] as const)('offers two independent 20 percent increases for %s without changing other equipment or water', (id, stat, base) => {
+    const tank = createTank(); tank.water = 12;
+    const initial = upgradeStats(tank);
+    expect(tank.upgrades[id]).toBe(0);
+    expect(UPGRADE_DEFINITIONS.find(definition => definition.id === id)).toMatchObject({ costs: [20, 35] });
+    expect(upgradeAvailability(tank, id)).toBe('unaffordable');
+    expect(buyUpgrade(tank, id)).toBe(false);
+    tank.credits = 20;
+    for (let level = 1; level <= 2; level++) {
+      expect(upgradeAvailability(tank, id)).toBe('available');
+      expect(buyUpgrade(tank, id)).toBe(true);
+      expect(tank.upgrades[id]).toBe(level);
+      const stats = upgradeStats(tank);
+      expect(stats[stat]).toBeCloseTo(base * 1.2 ** level, 10);
+      expect(stats).toEqual({ ...initial, [stat]: stats[stat] });
+      expect(tank.credits).toBe(0);
+      expect(tank.water).toBe(12);
+      expect(tank.capacity).toBe(20);
+      expect(tank.upgraded).toBe(false);
+      for (const [otherId, otherLevel] of Object.entries(tank.upgrades)) {
+        if (otherId !== id) expect(otherLevel).toBe(0);
+      }
+      if (level === 1) {
+        expect(upgradeAvailability(tank, id)).toBe('unaffordable');
+        expect(buyUpgrade(tank, id)).toBe(false);
+        expect(tank.upgrades[id]).toBe(1);
+        tank.credits = 35;
+      }
+    }
+    tank.credits = 100;
+    expect(upgradeAvailability(tank, id)).toBe('unavailable');
+    expect(buyUpgrade(tank, id)).toBe(false);
+    expect(tank.credits).toBe(100);
+    expect(tank.upgrades[id]).toBe(2);
+  });
+
   it('retains the subsurface scanner as hidden equipment without allowing purchases', () => {
     const tank = createTank(); tank.credits = 500;
     const scanner = 'subsurfaceScanner' as UpgradeId;

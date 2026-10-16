@@ -135,6 +135,9 @@ function statDescription(id: UpgradeId): string {
     case 'climbSpeed': return `Climbing speed ${stats.climbSpeed} → ${next.climbSpeed ?? stats.climbSpeed}`;
     case 'jumpPower': return `Jump launch speed ${format(stats.jumpSpeed)} → ${format(next.jumpSpeed ?? stats.jumpSpeed)}`;
     case 'capacity': return `Water capacity ${stats.capacity} → ${next.capacity ?? stats.capacity}`;
+    case 'torsoLamp': return `Light radius ${format(stats.torsoRadius)} → ${format(next.torsoRadius ?? stats.torsoRadius)}`;
+    case 'headlampWidth': return `Beam angle ${format(stats.headlampHalfAngle * 360 / Math.PI)}° → ${format((next.headlampHalfAngle ?? stats.headlampHalfAngle) * 360 / Math.PI)}°`;
+    case 'headlampDepth': return `Beam depth ${format(stats.headlampRange)} → ${format(next.headlampRange ?? stats.headlampRange)}`;
     case 'detectorRange': return session.tank.upgrades.detector
       ? `Detection radius ${stats.detectorRadius} → ${next.detectorRadius ?? stats.detectorRadius}`
       : `With detector: radius ${[160, 240, 320][level]} → ${[160, 240, 320][Math.min(2, level + 1)]}`;
@@ -190,7 +193,7 @@ el('panel').addEventListener('click', event => {
   void audio.unlock().catch(() => {}); audio.play('menu');
   if (target.dataset.binding) { bindingAction = target.dataset.binding as Action; target.textContent = 'Press input…'; return; }
   if (target.dataset.purchase) {
-    if (screen === 'shop' && nearHopper(session) && buyUpgrade(session.tank, target.dataset.purchase as UpgradeId)) { audio.play('buy'); saveRun(false); renderShop(); renderControls(); updateHUD(); }
+    if (screen === 'shop' && nearHopper(session) && buyUpgrade(session.tank, target.dataset.purchase as UpgradeId)) { audio.play('buy'); lastVisionAt = -1; saveRun(false); renderShop(); renderControls(); updateHUD(); }
     return;
   }
   switch (target.dataset.action) {
@@ -305,7 +308,9 @@ function tick(time: number): void {
     if (session.completed) { audio.play('end'); saveRun(false); changeScreen('ended'); }
   }
   if (session.time - lastVisionAt > 0.075 || lastTerrainVersion !== session.world.terrainVersion || lastVisionAt < 0) {
-    updateVision(session.world, vision, { position: playerCenter(session), headPosition: { x: session.player.x + session.player.width / 2, y: session.player.y + 6 }, aim, facing: session.facing, time: session.time, debugVision: DEV_TOOLS_ENABLED && session.options.debugVision });
+    const { torsoRadius, headlampRange, headlampHalfAngle } = upgradeStats(session.tank);
+    updateVision(session.world, vision, { position: playerCenter(session), headPosition: { x: session.player.x + session.player.width / 2, y: session.player.y + 6 }, aim, facing: session.facing, time: session.time, debugVision: DEV_TOOLS_ENABLED && session.options.debugVision,
+      torsoRadius, headlampRange, headlampHalfAngle });
     lastVisionAt = session.time; lastTerrainVersion = session.world.terrainVersion;
   }
   audio.setScene(Math.max(0, (session.player.y - session.surfaceY) / session.world.cellSize),
