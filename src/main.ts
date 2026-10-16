@@ -138,7 +138,7 @@ function statDescription(id: UpgradeId): string {
     case 'digDamage': return `Damage per strike ${stats.digDamage} → ${next.digDamage ?? stats.digDamage}`;
     case 'digSpeed': return `Seconds per swing ${stats.digInterval.toFixed(2)} → ${(next.digInterval ?? stats.digInterval).toFixed(2)}`;
     case 'climbSpeed': return `Climbing speed ${stats.climbSpeed} → ${next.climbSpeed ?? stats.climbSpeed}`;
-    case 'jumpPower': return `Jump launch speed ${stats.jumpSpeed} → ${next.jumpSpeed ?? stats.jumpSpeed}`;
+    case 'jumpPower': return `Jump launch speed ${format(stats.jumpSpeed)} → ${format(next.jumpSpeed ?? stats.jumpSpeed)}`;
     case 'capacity': return `Water capacity ${stats.capacity} → ${next.capacity ?? stats.capacity}`;
     case 'detectorRange': return session.tank.upgrades.detector
       ? `Detection radius ${stats.detectorRadius} → ${next.detectorRadius ?? stats.detectorRadius}`

@@ -133,13 +133,15 @@ describe('equipment purchases', () => {
   it('changes radius, damage and climbing independently', () => {
     const tank = createTank(); tank.credits = 500;
     buyUpgrade(tank, 'digRadius'); buyUpgrade(tank, 'digDamage'); buyUpgrade(tank, 'climbSpeed');
-    expect(upgradeStats(tank)).toMatchObject({ digRadius: 16, digDamage: 2, climbSpeed: 170, capacity: 20 });
+    expect(upgradeStats(tank)).toMatchObject({ digRadius: 16, digDamage: 2, climbSpeed: 135, capacity: 20 });
   });
 
   it('offers seven independent jump and climb purchases plus a one-time double jump before the demo wall', () => {
     const tank = createTank(); tank.credits = 1000; tank.water = 12;
     const initial = upgradeStats(tank);
-    expect(initial).toMatchObject({ jumpSpeed: 275, doubleJump: false });
+    expect(initial).toMatchObject({ climbSpeed: 75, wallJumpSpeed: 120, doubleJump: false });
+    expect(initial.jumpSpeed).toBeCloseTo(275 * 75 / 130, 8);
+    expect(initial.jumpGravity).toBeCloseTo(900 * (75 / 130) ** 2, 8);
     for (const [id, stat] of [['jumpPower', 'jumpSpeed'], ['climbSpeed', 'climbSpeed']] as const) {
       const definition = UPGRADE_DEFINITIONS.find(item => item.id === id)!;
       expect(definition.costs).toHaveLength(7);
@@ -149,6 +151,7 @@ describe('equipment purchases', () => {
         expect(buyUpgrade(tank, id)).toBe(true);
         expect(tank.upgrades[id]).toBe(level);
         expect(upgradeStats(tank)[stat]).toBeGreaterThan(previous);
+        if (id === 'jumpPower') expect(upgradeStats(tank).jumpGravity).toBe(900);
         previous = upgradeStats(tank)[stat];
       }
       expect(buyUpgrade(tank, id)).toBe(false);

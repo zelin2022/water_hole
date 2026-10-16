@@ -10,6 +10,11 @@ class OpacityCanvas {
   readonly pixels = new Set<string>();
   readonly fills: Array<{ x: number; y: number; width: number; height: number; alpha: number }> = [];
   readonly lines: Array<{ x: number; y: number }> = [];
+  readonly patches: Array<{ alpha: number; color: string }> = [];
+  readonly clips: Array<{ x: number; y: number; width: number; height: number }> = [];
+  private path: Array<{ x: number; y: number }> = [];
+  private clipBox: { x: number; y: number; width: number; height: number } | undefined;
+  private saved: Array<{ alpha: number; clip: { x: number; y: number; width: number; height: number } | undefined }> = [];
   private offsetX = 0;
   private offsetY = 0;
   readonly context = {
@@ -28,6 +33,8 @@ class OpacityCanvas {
       this.fills.push({ x, y, width: w, height: h, alpha: this.context.globalAlpha });
       for (let py = Math.max(0, Math.floor(y)); py < Math.min(this.height, y + h); py++) {
         for (let px = Math.max(0, Math.floor(x)); px < Math.min(this.width, x + w); px++) {
+          if (this.clipBox && (px < this.clipBox.x || py < this.clipBox.y
+            || px >= this.clipBox.x + this.clipBox.width || py >= this.clipBox.y + this.clipBox.height)) continue;
           const key = `${px},${py}`;
           if (this.context.globalCompositeOperation !== 'source-atop' || this.pixels.has(key)) this.pixels.add(key);
         }
@@ -41,9 +48,23 @@ class OpacityCanvas {
       }
     },
     createLinearGradient: () => ({ addColorStop: (): void => {} }),
-    beginPath: (): void => {}, moveTo: (): void => {},
-    lineTo: (x: number, y: number): void => { this.lines.push({ x: x + this.offsetX, y: y + this.offsetY }); },
-    closePath: (): void => {}, fill: (): void => {}, stroke: (): void => {},
+    save: (): void => { this.saved.push({ alpha: this.context.globalAlpha, clip: this.clipBox }); },
+    restore: (): void => { const previous = this.saved.pop()!; this.context.globalAlpha = previous.alpha; this.clipBox = previous.clip; },
+    beginPath: (): void => { this.path = []; },
+    moveTo: (x: number, y: number): void => { this.path.push({ x, y }); },
+    lineTo: (x: number, y: number): void => { this.path.push({ x, y }); this.lines.push({ x: x + this.offsetX, y: y + this.offsetY }); },
+    rect: (x: number, y: number, width: number, height: number): void => {
+      this.clipBox = { x: x + this.offsetX, y: y + this.offsetY, width, height };
+    },
+    clip: (): void => { if (this.clipBox) this.clips.push({ ...this.clipBox }); },
+    closePath: (): void => {},
+    fill: (): void => {
+      this.patches.push({ alpha: this.context.globalAlpha, color: this.context.fillStyle });
+      if (!this.path.length) return;
+      const xs = this.path.map(point => point.x), ys = this.path.map(point => point.y);
+      this.context.fillRect(Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+    },
+    stroke: (): void => {},
   };
   getContext(): typeof this.context { return this.context; }
 }
@@ -89,6 +110,72 @@ describe('terrain rendering', () => {
     expect(renderer.terrainTop).toBeGreaterThan(7000);
     expect(terrain.pixels.has(`9,${7982 - renderer.terrainTop}`)).toBe(true);
     expect(terrain.pixels.has(`13,${7982 - renderer.terrainTop}`)).toBe(false);
+  });
+});
+
+function renderTerrain(world: World, cameraY = 0): { terrain: OpacityCanvas; top: number } {
+  const terrain = new OpacityCanvas();
+  const renderer = Object.assign(Object.create(Renderer.prototype), {
+    terrain, materialLayer: new OpacityCanvas(), cameraY, height: 100,
+  }) as { terrainTop: number; cacheTerrain(world: World): void };
+  renderer.cacheTerrain(world);
+  return { terrain, top: renderer.terrainTop };
+}
+
+describe('terrain damage rendering', () => {
+  it('adds bruising, branching cracks and chipped rubble as the same terrain loses health', () => {
+    const render = (damage: number) => {
+      const world = new World(10, 12);
+      world.setMaterial(4, 5, 6);
+      world.damage[world.index(4, 5)] = damage;
+      return renderTerrain(world).terrain;
+    };
+    const intact = render(0), light = render(1), heavy = render(14);
+    expect(light.patches.length).toBeGreaterThan(intact.patches.length);
+    expect(heavy.patches.length).toBeGreaterThan(light.patches.length);
+    expect(heavy.lines.length).toBeGreaterThan(light.lines.length);
+    expect(heavy.fills.length).toBeGreaterThan(light.fills.length);
+    expect(heavy.patches[0].alpha).toBeGreaterThan(light.patches[0].alpha);
+  });
+
+  it('clips every damaged cell, keeps air and water clear, and preserves terrain state', () => {
+    const world = new World(10, 12, 8);
+    world.setMaterial(4, 5, 5);
+    world.damage[world.index(4, 5)] = 9;
+    world.water[world.index(5, 5)] = 1;
+    const before = { solid: world.solid.slice(), damage: world.damage.slice(), water: world.water.slice() };
+    const { terrain } = renderTerrain(world);
+    expect(terrain.clips).toContainEqual({ x: 32, y: 40, width: 8, height: 8 });
+    expect(terrain.pixels.has('39,45')).toBe(true);
+    expect(terrain.pixels.has('40,45')).toBe(false);
+    expect(terrain.pixels.has('31,45')).toBe(false);
+    expect(world.solid).toEqual(before.solid);
+    expect(world.damage).toEqual(before.damage);
+    expect(world.water).toEqual(before.water);
+  });
+
+  it('does not show damage on foundation or sealed boundaries even with stale values', () => {
+    const world = new World(10, 12);
+    world.setMaterial(4, 5, 3);
+    world.damage[world.index(4, 5)] = 100;
+    world.damage[world.index(0, 5)] = 100;
+    const { terrain } = renderTerrain(world);
+    expect(terrain.patches).toHaveLength(0);
+    expect(terrain.lines).toHaveLength(0);
+  });
+
+  it('reproduces partially damaged deep terrain from saved values without camera-dependent patterns', () => {
+    const world = new World(10, 2053);
+    world.setMaterial(4, 1995, 2);
+    world.damage[world.index(4, 1995)] = 4.5;
+    const restored = new World(world.width, world.height, world.cellSize);
+    restored.solid.set(world.solid); restored.material.set(world.material); restored.damage.set(world.damage);
+    const first = renderTerrain(world, 7980), second = renderTerrain(restored, 7960);
+    expect(first.terrain.patches).toEqual(second.terrain.patches);
+    expect(first.terrain.lines.map(point => ({ x: point.x, y: point.y + first.top })))
+      .toEqual(second.terrain.lines.map(point => ({ x: point.x, y: point.y + second.top })));
+    expect(first.terrain.clips).toHaveLength(1);
+    expect(second.terrain.pixels.has(`17,${7982 - second.top}`)).toBe(true);
   });
 });
 

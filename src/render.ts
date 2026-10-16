@@ -5,6 +5,7 @@ import { findNearestWater } from './game/detector';
 import { SONAR_TRAVEL_TIME, sonarOpacity, sonarTravelDistance, subsurfaceScannerOpacity, type VisionState } from './game/vision';
 import type { Point, World } from './game/world';
 import { caveOutlineOpacity, DARKNESS, lightTransmission } from './render-lighting';
+import { terrainDamageStage } from './terrain-damage';
 
 const ZOOM = 1.8;
 const TERRAIN_STYLES: Record<number, { base: string; shades: string[]; width: number; height: number; alpha: number }> = {
@@ -223,13 +224,68 @@ export class Renderer {
           }
         }
         if (!world.isSolid(x, y + 1)) { ctx.fillStyle = '#1c292b80'; ctx.fillRect(px, py + s - 2, s, 2); }
-        if (world.damage[index] > 0) {
-          ctx.strokeStyle = '#252b2c'; ctx.lineWidth = 0.8;
-          ctx.beginPath(); ctx.moveTo(px + 0.4, py + 0.3); ctx.lineTo(px + 2.4, py + 2.3); ctx.lineTo(px + 1.3, py + 3.8); ctx.stroke();
-        }
+        this.drawTerrainDamage(world, ctx, x, y);
       }
     }
     this.cachedWorld = world; this.cachedVersion = world.terrainVersion;
+  }
+
+  private drawTerrainDamage(world: World, ctx: CanvasRenderingContext2D, x: number, y: number): void {
+    const index = world.index(x, y), material = world.material[index];
+    const stage = terrainDamageStage(material, world.damage[index]);
+    if (!stage || !world.solid[index] || x <= 0 || y <= 0 || x >= world.width - 1 || y >= world.height - 1) return;
+    const size = world.cellSize, px = x * size, py = y * size;
+    const seed = hash(x + material * 37, y);
+    const centerX = px + size * (0.4 + seed * 0.2);
+    const centerY = py + size * (0.4 + hash(x, y + 73) * 0.2);
+    const radius = size * (0.22 + stage * 0.07);
+    const earth = material === 1 || material === 4;
+    const chipColor = earth ? '#c3a27a' : material === 5 ? '#93a5b4' : material === 6 ? '#c2a5b8' : '#b5b9b2';
+
+    // Damage remains an opaque-terrain decoration, clipped before scene lighting.
+    // A chip changes appearance only; collision and conserved water stay untouched.
+    ctx.save(); ctx.beginPath(); ctx.rect(px, py, size, size); ctx.clip();
+    ctx.globalAlpha = 0.16 + stage * 0.12;
+    ctx.fillStyle = earth ? '#49382b' : '#202a32';
+    ctx.beginPath();
+    for (let vertex = 0; vertex < 7; vertex++) {
+      const angle = vertex * Math.PI * 2 / 7 + seed * 1.7;
+      const reach = radius * (0.7 + hash(x + vertex * 13, y + material) * 0.3);
+      const vx = centerX + Math.cos(angle) * reach, vy = centerY + Math.sin(angle) * reach;
+      if (vertex === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
+    }
+    ctx.closePath(); ctx.fill();
+
+    ctx.globalAlpha = 0.5 + stage * 0.1;
+    ctx.strokeStyle = earth ? '#352b25' : '#111c24';
+    ctx.lineWidth = size * (0.075 + stage * 0.015);
+    const angle = seed * Math.PI * 2;
+    for (let branch = 0; branch < stage; branch++) {
+      const direction = angle + branch * 2.1;
+      const reach = size * (0.28 + stage * 0.045);
+      const bendX = centerX + Math.cos(direction + 0.3) * reach * 0.5;
+      const bendY = centerY + Math.sin(direction + 0.3) * reach * 0.5;
+      ctx.beginPath(); ctx.moveTo(centerX, centerY); ctx.lineTo(bendX, bendY);
+      ctx.lineTo(centerX + Math.cos(direction) * reach, centerY + Math.sin(direction) * reach); ctx.stroke();
+    }
+
+    if (stage === 4) {
+      // A dark split and loose facets make nearly broken rock distinct at game scale.
+      ctx.globalAlpha = 0.78; ctx.fillStyle = earth ? '#30271f' : '#14212a';
+      ctx.beginPath(); ctx.moveTo(centerX - size * 0.17, centerY - size * 0.12);
+      ctx.lineTo(centerX + size * 0.14, centerY - size * 0.19);
+      ctx.lineTo(centerX + size * 0.22, centerY + size * 0.08);
+      ctx.lineTo(centerX - size * 0.11, centerY + size * 0.2); ctx.closePath(); ctx.fill();
+    }
+    if (stage >= 2) {
+      ctx.globalAlpha = 0.45 + stage * 0.1; ctx.fillStyle = chipColor;
+      for (let chip = 0; chip < stage - 1; chip++) {
+        const chipX = px + size * (0.13 + hash(x + chip * 23, y + 97) * 0.7);
+        const chipY = py + size * (0.13 + hash(x + 113, y + chip * 17) * 0.7);
+        ctx.fillRect(chipX, chipY, size * (0.08 + stage * 0.018), size * 0.09);
+      }
+    }
+    ctx.restore();
   }
 
   private drawFallingDirt(session: Session): void {

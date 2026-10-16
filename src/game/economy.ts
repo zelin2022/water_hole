@@ -1,5 +1,6 @@
 import type { Point, World } from './world';
 import { collectWater } from './water';
+import { BASE_CLIMB_SPEED, BASE_JUMP_GRAVITY, BASE_JUMP_SPEED, FALL_GRAVITY } from './player';
 
 export type UpgradeId = 'digRadius' | 'digDamage' | 'digSpeed' | 'jumpPower' | 'doubleJump' | 'climbSpeed' | 'capacity' | 'detector' | 'detectorRange' | 'wallDig' | 'sonar' | 'subsurfaceScanner';
 export type UpgradeAvailability = 'unavailable' | 'unaffordable' | 'available';
@@ -37,8 +38,8 @@ export interface Tank {
 }
 export const UPGRADE_COST = 60;
 export const CREDIT_EPSILON = 1e-8;
-export const JUMP_SPEEDS = [275, 350, 440, 540, 650, 780, 920, 1080] as const;
-export const CLIMB_SPEEDS = [130, 170, 220, 280, 350, 440, 550, 680] as const;
+export const JUMP_SPEEDS = [BASE_JUMP_SPEED, 350, 440, 540, 650, 780, 920, 1080] as const;
+export const CLIMB_SPEEDS = [BASE_CLIMB_SPEED, 135, 200, 280, 350, 440, 550, 680] as const;
 
 export function createTank(capacity = 20): Tank {
   const upgrades = Object.fromEntries(UPGRADE_DEFINITIONS.map(definition => [definition.id, 0])) as Record<UpgradeId, number>;
@@ -53,6 +54,7 @@ export function upgradeStats(tank: Tank) {
     digInterval,
     digWindup: digInterval / 4,
     jumpSpeed: JUMP_SPEEDS[tank.upgrades.jumpPower],
+    jumpGravity: tank.upgrades.jumpPower === 0 ? BASE_JUMP_GRAVITY : FALL_GRAVITY,
     // Wall-origin jumps are a quicker technique than early climbing gear, but
     // their best repeatable two-jump ascent stays below matched climbing gear.
     wallJumpSpeed: Math.min(JUMP_SPEEDS[tank.upgrades.jumpPower], 1.6 * CLIMB_SPEEDS[tank.upgrades.jumpPower]),

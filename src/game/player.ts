@@ -31,9 +31,13 @@ export function createPlayer(x: number, y: number): Player {
 
 const EPSILON = 0.001;
 const MOVE_SPEED = 150;
-const CLIMB_SPEED = 130;
-const GRAVITY = 900;
-const JUMP_SPEED = 275;
+export const BASE_CLIMB_SPEED = 75;
+export const FALL_GRAVITY = 900;
+// Scale upward speed and acceleration together to slow the initial ascent
+// while retaining its height. Descending motion keeps the original weight.
+const BASE_ASCENT_SCALE = BASE_CLIMB_SPEED / 130;
+export const BASE_JUMP_SPEED = 275 * BASE_ASCENT_SCALE;
+export const BASE_JUMP_GRAVITY = FALL_GRAVITY * BASE_ASCENT_SCALE ** 2;
 const MAX_FALL_SPEED = 420;
 // Small leftover cells collide normally, but cannot hold the character in a climbing state.
 export const MIN_WALL_CONTACT = 12;
@@ -46,6 +50,7 @@ export interface PlayerMovementOptions {
   climbSpeed?: number;
   jumpSpeed?: number;
   wallJumpSpeed?: number;
+  jumpGravity?: number;
   doubleJump?: boolean;
   stepHeightCells?: 1 | 2;
 }
@@ -57,13 +62,14 @@ export function stepPlayer(world: World, player: Player, input: PlayerInput, dt:
   const step = dt / steps;
   for (let i = 0; i < steps; i++) {
     updatePlayer(world, player, input, step, i === 0 && input.jumpPressed,
-      options.climbSpeed ?? CLIMB_SPEED, world.cellSize * (options.stepHeightCells ?? DEFAULT_STEP_HEIGHT_CELLS),
-      options.jumpSpeed ?? JUMP_SPEED, options.wallJumpSpeed ?? 1.6 * CLIMB_SPEED, options.doubleJump ?? false);
+      options.climbSpeed ?? BASE_CLIMB_SPEED, world.cellSize * (options.stepHeightCells ?? DEFAULT_STEP_HEIGHT_CELLS),
+      options.jumpSpeed ?? BASE_JUMP_SPEED, options.wallJumpSpeed ?? 1.6 * BASE_CLIMB_SPEED,
+      options.jumpGravity ?? BASE_JUMP_GRAVITY, options.doubleJump ?? false);
   }
 }
 
 function updatePlayer(world: World, player: Player, input: PlayerInput, dt: number, jumpPressed: boolean, climbSpeed: number, stepHeight: number,
-  jumpSpeed: number, wallJumpSpeed: number, doubleJump: boolean): void {
+  jumpSpeed: number, wallJumpSpeed: number, jumpGravity: number, doubleJump: boolean): void {
   const horizontal = Number(input.right) - Number(input.left);
   player.grounded = player.vy >= 0 && touchesFloor(world, player);
   const startedGrounded = player.grounded;
@@ -109,7 +115,7 @@ function updatePlayer(world: World, player: Player, input: PlayerInput, dt: numb
       // Finish the last few pixels of an upward climb over a lip. This remains
       // normal airborne motion with collision checks, rather than snapping onto terrain.
       if (!player.grounded && player.vy < 0) {
-        player.vy = -Math.sqrt(2 * GRAVITY * (MIN_WALL_CONTACT + world.cellSize));
+        player.vy = -Math.sqrt(2 * jumpGravity * (MIN_WALL_CONTACT + world.cellSize));
       }
       player.wallJumpChain = !player.grounded;
       player.wall = 0;
@@ -120,7 +126,7 @@ function updatePlayer(world: World, player: Player, input: PlayerInput, dt: numb
   if (player.wallJumpTime > 0) player.wallJumpTime = Math.max(0, player.wallJumpTime - dt);
   else player.vx = horizontal * MOVE_SPEED;
 
-  player.vy = Math.min(MAX_FALL_SPEED, player.vy + GRAVITY * dt);
+  player.vy = Math.min(MAX_FALL_SPEED, player.vy + (player.vy < 0 ? jumpGravity : FALL_GRAVITY) * dt);
   moveVertical(world, player, player.vy * dt);
   const canStep = startedGrounded && !jumpPressed && player.grounded;
   const previousX = player.x;

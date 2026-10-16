@@ -1,6 +1,6 @@
 {
   "name": "water-hole",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "private": true,
   "description": "A finite excavation and water collection game demo.",
   "type": "module",

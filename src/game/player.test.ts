@@ -177,13 +177,14 @@ describe('player movement', () => {
     const player = createPlayer(side < 0 ? 124 : 104, 92);
     tick(world, player);
     expect(player.wall).toBe(side);
-    for (let i = 0; i < 32; i++) {
+    const climbSpeed = upgradeStats(createTank()).climbSpeed;
+    for (let i = 0; i < Math.ceil(60 / climbSpeed * 60); i++) {
       tick(world, player, { up: true });
       expect(player.wall).toBe(side);
       expectOutsideTerrain(world, player);
     }
     expect(player.y).toBeLessThan(36);
-    for (let i = 0; i < 62; i++) {
+    for (let i = 0; i < Math.ceil(125 / climbSpeed * 60); i++) {
       tick(world, player, { down: true });
       expect(player.wall).toBe(side);
       expectOutsideTerrain(world, player);
@@ -269,6 +270,28 @@ describe('player movement', () => {
     expect(player.x).toBeGreaterThan(120);
   });
 
+  it('keeps the small wall-lip assist height when initial upward gravity is reduced', () => {
+    const world = room();
+    for (let y = 25; y < 50; y++) {
+      for (let x = 30; x < 79; x++) world.setSolid(x, y, true);
+    }
+    const player = createPlayer(104, 120);
+    tick(world, player);
+    for (let frame = 0; frame < 240 && player.wall; frame++) {
+      stepPlayer(world, player, { ...idle, up: true }, 1 / 120);
+    }
+    expect(player.wall).toBe(0);
+    expect(player.vy).toBeLessThan(0);
+    const lipY = player.y;
+    let highest = lipY;
+    for (let frame = 0; frame < 240 && player.vy < 0; frame++) {
+      stepPlayer(world, player, idle, 1 / 120);
+      highest = Math.min(highest, player.y);
+    }
+    expect(lipY - highest).toBeGreaterThan(14);
+    expect(lipY - highest).toBeLessThan(17);
+  });
+
   it('does not attach during a rising jump beside a wall, then attaches when falling', () => {
     const world = room();
     wall(world, 30);
@@ -280,7 +303,10 @@ describe('player movement', () => {
     expect(player.wall).toBe(0);
     expect(player.vy).toBeLessThan(0);
     expect(player.grounded).toBe(false);
-    tick(world, player, {}, 22);
+    for (let frame = 0; frame < 120 && player.vy < 0; frame++) {
+      tick(world, player);
+      if (player.vy < 0) expect(player.wall).toBe(0);
+    }
     expect(player.wall).toBe(1);
   });
 
@@ -381,6 +407,62 @@ describe('jump and climbing progression', () => {
     return { world, player };
   }
 
+  function measureAscent(world: World, player: ReturnType<typeof createPlayer>, options: Parameters<typeof stepPlayer>[4]) {
+    const initialY = player.y;
+    stepPlayer(world, player, { ...idle, jumpPressed: true }, 1 / 120, options);
+    const launchSpeed = -player.vy;
+    let highest = player.y, elapsed = 1 / 120;
+    while (player.vy < 0 && elapsed < 4) {
+      stepPlayer(world, player, idle, 1 / 120, options);
+      highest = Math.min(highest, player.y);
+      elapsed += 1 / 120;
+    }
+    return { launchSpeed, height: initialY - highest, elapsed };
+  }
+
+  it('slows initial climbing and ground jumping while preserving the previous ground-jump height', () => {
+    const world = room();
+    const reference = measureAscent(world, createPlayer(80, 168), { jumpSpeed: 275, jumpGravity: 900 });
+    const initial = upgradeStats(createTank());
+    const actual = measureAscent(world, createPlayer(80, 168), initial);
+    expect(initial.climbSpeed).toBe(75);
+    expect(actual.launchSpeed).toBeLessThan(reference.launchSpeed * 0.6);
+    expect(Math.abs(actual.height - reference.height)).toBeLessThan(1);
+    expect(actual.elapsed).toBeGreaterThan(reference.elapsed * 1.6);
+    expect(initial.jumpSpeed / initial.climbSpeed).toBeCloseTo(275 / 130, 8);
+  });
+
+  it.each([-1, 1] as const)('slows the initial wall jump without reducing its height on side %s', side => {
+    const reference = tallRoom(side), actual = tallRoom(side);
+    const oldAscent = measureAscent(reference.world, reference.player, { wallJumpSpeed: 208, jumpGravity: 900 });
+    const newAscent = measureAscent(actual.world, actual.player, upgradeStats(createTank()));
+    expect(newAscent.launchSpeed).toBeLessThan(oldAscent.launchSpeed * 0.6);
+    expect(Math.abs(newAscent.height - oldAscent.height)).toBeLessThan(1);
+    expect(newAscent.elapsed).toBeGreaterThan(oldAscent.elapsed * 1.6);
+  });
+
+  it('keeps normal falling acceleration and terminal speed with slower base ascents', () => {
+    const world = new World(100, 3200, 4);
+    const player = createPlayer(160, 1000);
+    stepPlayer(world, player, idle, 0.1, upgradeStats(createTank()));
+    expect(player.vy).toBeCloseTo(90, 8);
+    stepPlayer(world, player, idle, 1, upgradeStats(createTank()));
+    expect(player.vy).toBe(420);
+  });
+
+  it.each([-1, 1] as const)('increases actual wall-jump height at every jump tier on side %s', side => {
+    const tank = createTank();
+    let previousHeight = 0, previousLaunch = 0;
+    for (let level = 0; level <= 7; level++) {
+      tank.upgrades.jumpPower = level;
+      const { world, player } = tallRoom(side);
+      const ascent = measureAscent(world, player, upgradeStats(tank));
+      expect(ascent.height, `tier ${level}`).toBeGreaterThan(previousHeight);
+      expect(ascent.launchSpeed, `tier ${level}`).toBeGreaterThan(previousLaunch);
+      previousHeight = ascent.height; previousLaunch = ascent.launchSpeed;
+    }
+  });
+
   it('increases both launch speed and actual jump height at every jump tier', () => {
     const world = new World(100, 1000, 4);
     for (let x = 1; x < 99; x++) world.setSolid(x, 900, true);
@@ -410,7 +492,7 @@ describe('jump and climbing progression', () => {
     stepPlayer(world, player, { ...idle, jumpPressed: true }, 1 / 120, options);
     stepPlayer(world, player, idle, 0.1, options);
     stepPlayer(world, player, { ...idle, jumpPressed: true }, 1 / 120, options);
-    expect(player.vy).toBeLessThan(-260);
+    expect(player.vy).toBeLessThan(-150);
     expect(player.airJumpAvailable).toBe(false);
     const speed = player.vy;
     stepPlayer(world, player, { ...idle, jumpPressed: true }, 1 / 120, options);
@@ -458,7 +540,7 @@ describe('jump and climbing progression', () => {
           while (cycles < 6 && elapsed < 30) {
             const attached = player.wall !== 0;
             const airJump = !attached && !usedAirJump && player.vy >= -launchSpeed * remainingUpwardFraction;
-            const returnDelay = returnFraction * launchSpeed / 900;
+            const returnDelay = returnFraction * launchSpeed / options.jumpGravity;
             stepPlayer(world, player, { ...idle,
               left: side < 0 && cycleTime >= returnDelay, right: side > 0 && cycleTime >= returnDelay,
               jumpPressed: attached || airJump,
