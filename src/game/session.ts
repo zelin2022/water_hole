@@ -41,6 +41,8 @@ export interface Session {
   options: Required<SessionOptions>;
   surfaceY: number;
   delivered: number;
+  /** Signed credit-only changes made by provisional development controls. */
+  devCreditAdjustment: number;
   time: number;
   completed: boolean;
   initialWater: number;
@@ -67,7 +69,7 @@ export function createSession(options: SessionOptions = {}): Session {
     surfaceY: site.surfaceY,
     seed,
     options: { seed, caveMemory: options.caveMemory ?? 'remembered', headlamp: options.headlamp ?? 'character', debugVision: options.debugVision ?? false },
-    delivered: 0, time: 0, completed: false,
+    delivered: 0, devCreditAdjustment: 0, time: 0, completed: false,
     initialWater: totalWater(site.world),
     digCooldown: 0, strikeTime: -1, lastStrike: null,
     unloading: false, facing: 1,

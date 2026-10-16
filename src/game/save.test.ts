@@ -3,6 +3,7 @@ import { createSession, DEMO_DELIVERY_LIMIT } from './session';
 import { collectIntoTank, buyUpgrade } from './economy';
 import { totalWater } from './water';
 import { deserializeSession, serializeSession } from './save';
+import { setDevCredits, setOmniVision } from './dev-tools';
 
 function stockedSession() {
   const session = createSession({ seed: 42, caveMemory: 'sonar', headlamp: 'mouse' });
@@ -33,6 +34,47 @@ function corrupt(change: (data: any) => void) {
 }
 
 describe('versioned local saves', () => {
+  it('round-trips repeated credit grants, purchases, reductions and omni vision', () => {
+    const session = stockedSession();
+    setDevCredits(session, 1000);
+    buyUpgrade(session.tank, 'detector');
+    setDevCredits(session, 2.5);
+    setOmniVision(session, true);
+    const restored = deserializeSession(serializeSession(session));
+    expect(restored.tank.credits).toBe(2.5);
+    expect(restored.devCreditAdjustment).toBe(-2.5);
+    expect(restored.tank.upgrades.detector).toBe(1);
+    expect(restored.options.debugVision).toBe(true);
+    expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(restored.initialWater, 2);
+  });
+
+  it('accepts earlier v1 saves without development credit metadata as zero adjustment', () => {
+    const earlier = JSON.parse(serializeSession(stockedSession()));
+    delete earlier.session.devCreditAdjustment;
+    expect(deserializeSession(JSON.stringify(earlier)).devCreditAdjustment).toBe(0);
+  });
+
+  it('rejects invalid credit adjustments and balances not covered by the adjusted ledger', () => {
+    for (const adjustment of [null, '100', Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(() => deserializeSession(corrupt(data => data.session.devCreditAdjustment = adjustment))).toThrow(/credit adjustment/);
+    }
+    expect(() => deserializeSession(corrupt(data => {
+      data.session.devCreditAdjustment = 10;
+      data.session.tank.credits = 11;
+    }))).toThrow(/unearned credits/);
+    expect(() => deserializeSession(corrupt(data => {
+      data.session.devCreditAdjustment = -1;
+    }))).toThrow(/unearned credits/);
+  });
+
+  it('still rejects lost water even when a development credit grant covers the balance', () => {
+    const session = createSession();
+    setDevCredits(session, 1000);
+    const damaged = JSON.parse(serializeSession(session));
+    damaged.session.tank.water = 1;
+    expect(() => deserializeSession(JSON.stringify(damaged))).toThrow(/water ledger mismatch/);
+  });
+
   it('round-trips terrain damage, water, upgrades, comparison modes and exploration independently', () => {
     const original = stockedSession();
     const restored = deserializeSession(serializeSession(original));

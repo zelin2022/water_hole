@@ -9,16 +9,16 @@ Official documentation checked on 2026-10-15. Complete the current Steamworks da
 ## Local release candidate
 
 - [ ] Finalize comparison defaults, progression, presentation, and the delivery cutoff after playtesting.
-- [ ] Run `npm ci`, `npm test`, and `npm run build` on the release revision.
-- [ ] Build Windows with `npm run package:win`. Distribute the complete `release/Water Hole-win32-x64/` folder, including its runtime files; the executable alone is insufficient.
+- [ ] Run `npm ci`, `npm test`, and `npm run build:release` on the release revision. Confirm `VITE_DEV_TOOLS` is disabled, with no overriding environment value enabling it. Verify that backtick cannot open a developer panel, New Game has no full-visibility checkbox, and saved omni-vision overrides cannot enable full visibility.
+- [ ] Build Windows with `npm run package:win:release`. Distribute the complete `release/Water Hole-win32-x64/` folder, including its runtime files; the executable alone is insufficient.
 - [ ] Test the packaged app on a clean Windows installation: new game, controls, upgrades, save/load after relaunch, audio/display settings, and the stopped demo ending.
 - [ ] Build and test macOS natively before advertising macOS support:
 
 ```sh
 npm ci
 npm test
-npm run package:mac       # Apple Silicon / arm64
-npm run package:mac:x64   # Intel / x64, if supported for release
+npm run package:mac:release       # Apple Silicon / arm64
+npm run package:mac:x64:release   # Intel / x64, if supported for release
 ```
 
 The expected bundles are `release/Water Hole-darwin-arm64/Water Hole.app` and `release/Water Hole-darwin-x64/Water Hole.app`. Current packaging does not configure signing or notarization. macOS cross-packaging was blocked by Windows symlink privileges; no Mac package or Mac QA is claimed. Decide the supported architectures, complete the signing/distribution work appropriate for release, and test on the actual target hardware.

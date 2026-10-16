@@ -24,7 +24,7 @@ Open the local URL Vite prints. Run `npm run desktop:dev` in a second terminal t
 
 ## Playtest options
 
-New Game offers independent comparisons for dim remembered cave outlines versus sonar-dependent darkness, and character-facing versus mouse-directed headlamps. Mouse aim visibly rotates the worker's head. The seed reproduces the same finite site; choices are retained by save/load. Browser development also offers a full-visibility checkbox for testing.
+New Game offers independent comparisons for dim remembered cave outlines versus sonar-dependent darkness, and character-facing versus mouse-directed headlamps. Mouse aim visibly rotates the worker's head. The seed reproduces the same finite site; choices are retained by save/load. Provisional builds also offer a full-visibility checkbox for testing.
 
 The underground starter shaft is beside the exchange. Airborne wall contact attaches only while falling. Hold S to descend after attaching, then work from the shaft floor to reach the first reservoir. Digging while attached is disabled until the work-harness upgrade is purchased.
 
@@ -51,6 +51,14 @@ Climbing is unlimited and water is harmless. The shop offers pick radius, pick d
 
 Unavailable and fully installed upgrades are hidden. Eligible upgrades without enough credits show their price in red; the install button becomes available when funded. Buying a water detector reveals its range upgrades.
 
+## Developer panel
+
+Press the backtick key (`` ` ``) during an expedition to open the provisional developer panel. It also opens from pause or the equipment shop. Gameplay pauses while the panel is open; backtick, Escape, or Close panel returns to the previous screen.
+
+The panel has two tools: toggle omni vision, and set the current credit balance to a nonnegative amount up to 1 billion. Changes are saved with the expedition. Development credits do not count as delivered water or advance the demo cutoff, and omni vision does not permanently explore the whole map.
+
+The build flag `VITE_DEV_TOOLS=true` in `.env` enables these tools for current browser, desktop, and packaged playtests. `.env.release` disables them for `npm run build:release` and the release packaging commands below. A disabled build excludes the panel and hotkey and ignores saved omni-vision overrides. Restart the development server after changing the flag. Environment overrides take precedence over the `.env` files.
+
 ## Saving
 
 One local slot supports manual Save/Load, Continue, autosaving every 30 seconds, and saving when returning to the menu or quitting. New Game confirms before replacing an expedition. Terrain, partial damage, water, equipment, exploration, comparison choices, and sonar/cutoff state are preserved. Browser development and the packaged desktop game use separate local storage.
@@ -63,6 +71,14 @@ npm run package:mac
 npm run package:mac:x64
 ```
 
+For public release candidates with developer tools disabled:
+
+```sh
+npm run package:win:release
+npm run package:mac:release
+npm run package:mac:x64:release
+```
+
 Outputs are under `release/`: Windows x64, macOS Apple Silicon, and macOS Intel respectively. Copy the whole Windows folder, then launch `Water Hole.exe`; Node and npm are not needed to run a package. Build macOS packages on the Mac. Current packages are unsigned and macOS signing/notarization remains release work. macOS packaging and playtesting have not been verified on this Windows host.
 
 ## Development
@@ -72,6 +88,6 @@ npm test
 npm run build
 ```
 
-Development follows TDD: confirm a failing behaviour test, implement, then refactor with tests passing. Terrain, water, movement, progression, saving, lighting, sonar, and detection remain independent of Canvas/Electron. `npm test` also checks the desktop bridge and display contract. Controls and rendering receive browser/desktop playtests.
+Development follows TDD: confirm a failing behaviour test, implement, then refactor with tests passing. Terrain, water, movement, progression, saving, lighting, sonar, and detection remain independent of Canvas/Electron. `npm test` also checks the desktop bridge/display contract and verifies that actual release JavaScript excludes developer tools. Controls and rendering receive browser/desktop playtests.
 
 See [the demo scope](docs/DEMO.md), [art direction](docs/ART_DIRECTION.md), and [Steam release preparation](docs/STEAM_DEMO_RELEASE.md). The original [v0 scope](docs/V0.md) remains as milestone history.

@@ -74,6 +74,8 @@ export function deserializeSession(json: string): Session {
     && typeof state.options.debugVision === 'boolean', 'comparison options');
   assert(finite(state.surfaceY, 0, extentY) && point(state.hopper, extentX, extentY), 'surface or machine');
   assert(finite(state.time) && finite(state.initialWater) && finite(state.delivered, 0, DEMO_DELIVERY_LIMIT), 'progress ledger');
+  const devCreditAdjustment = state.devCreditAdjustment === undefined ? 0 : state.devCreditAdjustment;
+  assert(finite(devCreditAdjustment, -Number.MAX_SAFE_INTEGER), 'credit adjustment');
   assert(typeof state.completed === 'boolean' && state.completed === (state.delivered >= DEMO_DELIVERY_LIMIT), 'demo end state');
   assert(typeof state.unloading === 'boolean' && !(state.completed && state.unloading), 'unloading state');
   assert(state.facing === -1 || state.facing === 1, 'facing');
@@ -97,8 +99,8 @@ export function deserializeSession(json: string): Session {
   }
   assert(tank.capacity === upgradeStats(tank as Tank).capacity && tank.water <= tank.capacity
     && tank.upgraded === (tank.upgrades.capacity > 0), 'tank capacity');
-  // Credits spent on equipment do not affect the water ledger.
-  assert(tank.credits <= state.delivered + 0.00001, 'unearned credits');
+  // Equipment purchases and development balance changes never alter the water ledger.
+  assert(tank.credits <= state.delivered + devCreditAdjustment + 0.00001, 'unearned credits');
   const player = state.player;
   assert(record(player) && player.width === 16 && player.height === 32
     && finite(player.x, 0, extentX - player.width) && finite(player.y, 0, extentY - player.height)
@@ -121,5 +123,5 @@ export function deserializeSession(json: string): Session {
   // Existing active v1 runs may contain old floating obstacles. Migrate once;
   // completed runs retain their frozen terrain and new saves keep their debris.
   if (state.fallingDirt === undefined && !state.completed) fallingDirt = detachSmallDirt(world);
-  return { ...state, world, fallingDirt, explored: Uint8Array.from(state.explored) } as Session;
+  return { ...state, world, fallingDirt, devCreditAdjustment, explored: Uint8Array.from(state.explored) } as Session;
 }

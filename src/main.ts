@@ -6,11 +6,13 @@ import { createVision, pingSonar, SONAR_COOLDOWN, updateVision } from './game/vi
 import { ACTION_LABELS, DEFAULT_SETTINGS, keyLabel, readSettings, rebind, RESOLUTIONS, type Action } from './settings';
 import { AudioEngine } from './audio';
 import { Renderer } from './render';
+import { DevPanel } from './dev-panel';
 
 declare global {
   interface Window { waterHoleDesktop?: { setDisplay(options: { fullscreen: boolean; width: number; height: number }): Promise<void>; quit(): void } }
 }
-type Screen = 'home' | 'new' | 'playing' | 'pause' | 'shop' | 'settings' | 'confirm' | 'ended';
+const DEV_TOOLS_ENABLED = import.meta.env.VITE_DEV_TOOLS === 'true';
+type Screen = 'home' | 'new' | 'playing' | 'pause' | 'shop' | 'settings' | 'confirm' | 'ended' | 'dev';
 const SAVE_KEY = 'water-hole.demo.save.v1';
 const SETTINGS_KEY = 'water-hole.settings.v1';
 const app = document.querySelector<HTMLElement>('#app')!;
@@ -39,6 +41,7 @@ let session = createSession();
 let vision = createVision(session.world, session.explored);
 let screen: Screen = 'home';
 let settingsReturn: Screen = 'home';
+let devReturn: 'playing' | 'pause' | 'shop' = 'playing';
 let hasRun = false;
 let pendingNew: SessionOptions = {};
 let bindingAction: Action | null = null;
@@ -51,6 +54,12 @@ let lastAutoSaveAt = 0, noticeUntil = 0, lastHUDAt = 0;
 const STEP = 1 / 60;
 const format = (value: number) => value.toLocaleString('en', { maximumFractionDigits: 1 });
 const down = (action: Action) => held.has(settings.bindings[action]);
+const devPanel = DEV_TOOLS_ENABLED ? new DevPanel(el('panel'), {
+  session: () => session,
+  isOpen: () => screen === 'dev',
+  changed: () => { lastVisionAt = -1; updateHUD(); saveRun(false); },
+  close: () => changeScreen(devReturn),
+}) : null;
 function clearInput(): void { held.clear(); pressed.clear(); accumulated = 0; }
 function notice(message: string): void { el('notice').textContent = message; el('notice').classList.add('visible'); noticeUntil = performance.now() + 3200; }
 function syncSonar(): void { session.sonar = vision.sonar; session.lastSonarAt = vision.lastSonarAt; }
@@ -60,6 +69,7 @@ function saveRun(notify = true): boolean {
   catch { if (notify) notice('Could not save. Local storage may be full or unavailable.'); return false; }
 }
 function restore(next: Session): void {
+  if (!DEV_TOOLS_ENABLED) next.options.debugVision = false;
   session = next; hasRun = true; vision = createVision(session.world, session.explored);
   vision.sonar = session.sonar; vision.lastSonarAt = session.lastSonarAt; pointer.active = false;
   const centre = playerCenter(session); aim = { x: centre.x + session.facing * 80, y: centre.y };
@@ -79,7 +89,7 @@ function heading(eyebrow: string, title: string, text = ''): string { return `<s
 function button(action: string, label: string, primary = false, disabled = false): string { return `<button type="button" data-action="${action}" class="${primary ? 'primary-button' : 'menu-button'}" ${disabled ? 'disabled' : ''}>${label}</button>`; }
 function changeScreen(next: Screen): void {
   clearInput(); bindingAction = null; screen = next; el('overlay').hidden = next === 'playing';
-  audio.setActive(next !== 'pause' && next !== 'settings'); renderPanel();
+  audio.setActive(next !== 'pause' && next !== 'settings' && next !== 'dev'); renderPanel();
   updateHUD();
   if (next === 'playing') canvas.focus({ preventScroll: true });
 }
@@ -94,12 +104,13 @@ function renderPanel(): void {
       <form id="new-form"><label class="setting-row">Site seed<input id="site-seed" type="number" min="0" max="4294967295" step="1" value="${crypto.getRandomValues(new Uint32Array(1))[0]}"></label>
       <label class="setting-row">Cave memory<select id="cave-memory"><option value="remembered">Dim remembered outlines</option><option value="sonar">Dark caves / sonar outlines</option></select></label>
       <label class="setting-row">Headlamp direction<select id="headlamp"><option value="character">Character facing</option><option value="mouse">Mouse aim + head rotation</option></select></label>
-      ${import.meta.env.DEV ? '<label class="setting-row">Full visibility for testing<input id="debug-vision" type="checkbox"></label>' : ''}
+      ${DEV_TOOLS_ENABLED ? '<label class="setting-row">Full visibility for testing<input id="debug-vision" type="checkbox"></label>' : ''}
       <div class="panel-actions"><button type="submit" class="primary-button">Begin expedition</button>${button('back-home', 'Back')}</div></form><p class="small-note">A new expedition replaces the single saved game after confirmation.</p>`; break;
     case 'confirm': el('panel').innerHTML = `${heading('START OVER', 'Replace this expedition?', 'Starting a new game replaces your current expedition and saved game.')}<div class="panel-actions">${button('confirm-new', 'Start new expedition', true)}${button('cancel-new', 'Keep current expedition')}</div>`; break;
     case 'pause': el('panel').innerHTML = `${heading('EXPEDITION PAUSED', 'Take a breather', 'Terrain, water, and equipment are paused.')}<div class="menu-stack">${button('resume', 'Resume', true)}${button('save', 'Save game')}${button('load', 'Load saved game', false, !saved)}${button('settings', 'Settings')}${button('home', 'Save & return to menu')}${window.waterHoleDesktop ? button('quit', 'Save & quit') : ''}</div>`; break;
     case 'shop': renderShop(); break;
     case 'settings': renderSettings(); break;
+    case 'dev': if (DEV_TOOLS_ENABLED) el('panel').innerHTML = devPanel!.render(); break;
     case 'ended': el('panel').innerHTML = `${heading('WATER HOLE', 'Thanks for playing<br>the demo.', 'You have reached the end of this demo. Thanks for spending some time underground.')}<div class="panel-actions">${button('new', 'New expedition', true)}${button('home', 'Main menu')}${window.waterHoleDesktop ? button('quit', 'Quit') : ''}</div>`; break;
   }
 }
@@ -150,6 +161,7 @@ async function applyDisplay(): Promise<void> {
 function renderControls(): void {
   const hints: [Action, string][] = [['left', 'Move'], ['up', 'Climb'], ['jump', 'Jump'], ['dig', 'Strike'], ['collect', 'Collect'], ['unload', 'Unload'], ['shop', 'Shop'], ['sonar', 'Sonar']];
   el('controls').innerHTML = hints.map(([action, label]) => `<span><kbd>${keyLabel(settings.bindings[action])}${action === 'left' ? ` / ${keyLabel(settings.bindings.right)}` : action === 'up' ? ` / ${keyLabel(settings.bindings.down)}` : ''}</kbd>${label}</span>`).join('');
+  if (DEV_TOOLS_ENABLED) el('controls').insertAdjacentHTML('beforeend', '<span><kbd>&#96;</kbd>Dev panel</span>');
   el('menu').innerHTML = `Menu <kbd>${keyLabel(settings.bindings.pause)}</kbd>`;
 }
 function beginNew(): void { restore(createSession(pendingNew)); saveRun(false); notice('Explore the shaft. Hold your dig control for repeated pickaxe strikes.'); }
@@ -157,7 +169,7 @@ el('panel').addEventListener('submit', event => {
   event.preventDefault(); if (screen !== 'new') return;
   const seed = Number(el<HTMLInputElement>('site-seed').value);
   if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) { notice('Choose a whole-number seed between 0 and 4294967295.'); return; }
-  pendingNew = { seed, caveMemory: el<HTMLSelectElement>('cave-memory').value as 'remembered' | 'sonar', headlamp: el<HTMLSelectElement>('headlamp').value as 'character' | 'mouse', debugVision: import.meta.env.DEV && !!document.querySelector<HTMLInputElement>('#debug-vision')?.checked };
+  pendingNew = { seed, caveMemory: el<HTMLSelectElement>('cave-memory').value as 'remembered' | 'sonar', headlamp: el<HTMLSelectElement>('headlamp').value as 'character' | 'mouse', debugVision: DEV_TOOLS_ENABLED && !!document.querySelector<HTMLInputElement>('#debug-vision')?.checked };
   if (hasRun || read(SAVE_KEY)) changeScreen('confirm'); else beginNew();
 });
 el('panel').addEventListener('click', event => {
@@ -202,9 +214,18 @@ window.addEventListener('keydown', event => {
   void audio.unlock().catch(() => {});
   if (bindingAction) { event.preventDefault(); captureBinding(event.code); return; }
   if ((event.ctrlKey && event.code !== 'ControlLeft') || event.metaKey || event.altKey) return;
-  if ((event.code === settings.bindings.pause || event.code === 'Escape') && !(event.target instanceof HTMLInputElement && screen === 'new')) {
+  if (DEV_TOOLS_ENABLED && event.code === 'Backquote') {
+    if (screen === 'dev') { event.preventDefault(); if (!event.repeat) changeScreen(devReturn); }
+    else if (hasRun && !session.completed && (screen === 'playing' || screen === 'pause' || screen === 'shop')) {
+      event.preventDefault(); if (event.repeat) return;
+      devReturn = screen; changeScreen('dev');
+    }
+    return;
+  }
+  if (((event.code === settings.bindings.pause && !(DEV_TOOLS_ENABLED && screen === 'dev')) || event.code === 'Escape') && !(event.target instanceof HTMLInputElement && screen === 'new')) {
     event.preventDefault(); if (event.repeat) return;
     if (screen === 'playing') pause();
+    else if (DEV_TOOLS_ENABLED && screen === 'dev') changeScreen(devReturn);
     else if (screen === 'pause' || screen === 'shop') changeScreen('playing');
     else if (screen === 'settings') changeScreen(settingsReturn);
     else if (screen === 'new' || screen === 'confirm') changeScreen(hasRun && !session.completed ? 'pause' : 'home');
@@ -269,7 +290,7 @@ function tick(time: number): void {
     if (session.completed) { audio.play('end'); saveRun(false); changeScreen('ended'); }
   }
   if (session.time - lastVisionAt > 0.075 || lastTerrainVersion !== session.world.terrainVersion || lastVisionAt < 0) {
-    updateVision(session.world, vision, { position: playerCenter(session), headPosition: { x: session.player.x + session.player.width / 2, y: session.player.y + 6 }, aim, facing: session.facing, headlamp: session.options.headlamp, time: session.time, debugVision: session.options.debugVision });
+    updateVision(session.world, vision, { position: playerCenter(session), headPosition: { x: session.player.x + session.player.width / 2, y: session.player.y + 6 }, aim, facing: session.facing, headlamp: session.options.headlamp, time: session.time, debugVision: DEV_TOOLS_ENABLED && session.options.debugVision });
     lastVisionAt = session.time; lastTerrainVersion = session.world.terrainVersion;
   }
   renderer.render(session, aim, screen === 'playing' && down('collect'), vision);
