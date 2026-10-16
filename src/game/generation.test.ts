@@ -78,6 +78,35 @@ function median(values: number[]): number {
 }
 
 describe('finite seeded sites', () => {
+  it.each(distributions)('separates the starter shaft from the platform with a flat walkable approach in %s', (distribution) => {
+    const { world, spawn, surfaceY } = generateSite(42, distribution);
+    // A 480-world-pixel approach reads as roughly two thirds of the default
+    // 1,280-pixel view at 1.8 zoom, without making generation viewport-dependent.
+    expect((144 - 24) * world.cellSize).toBe(480);
+    for (let x = 24; x < 144; x++) {
+      expect(world.isSolid(x, 43)).toBe(false);
+      expect(world.isSolid(x, 44)).toBe(true);
+      expect(world.material[world.index(x, 44)]).toBe(1);
+    }
+    for (let y = 44; y < 106; y++) {
+      expect(world.isSolid(143, y)).toBe(true);
+      expect(world.isSolid(144, y)).toBe(false);
+      expect(world.isSolid(161, y)).toBe(false);
+      expect(world.isSolid(162, y)).toBe(true);
+    }
+    expect(world.isSolid(144, 106)).toBe(true);
+    expect(world.isSolid(161, 106)).toBe(true);
+    // The worker can walk from the platform to the shaft without jumping,
+    // climbing, digging, or tripping over a surface step.
+    const player = createPlayer(spawn.x, spawn.y);
+    const input = { left: false, right: true, up: false, down: false, jumpPressed: false };
+    for (let frame = 0; frame < 240 && player.x + player.width <= 144 * world.cellSize; frame++) {
+      stepPlayer(world, player, input, 1 / 60);
+      expect(player.y + player.height).toBeCloseTo(surfaceY, 3);
+    }
+    expect(player.x + player.width).toBeGreaterThan(144 * world.cellSize);
+  });
+
   it.each(distributions)('replaces separate hollow caves with occasional dry pockets in %s', (distribution) => {
     const world = generateSite(42, distribution).world;
     const pockets = cavities(world);
@@ -109,7 +138,7 @@ describe('finite seeded sites', () => {
     }
     const starters = Array.from({ length: 40 }, (_, index) => {
       const world = generateSite(Math.imul(index + 1, 0x9e3779b1) >>> 0).world;
-      return cavities(world).find((pocket) => pocket.cells.includes(world.index(48, 102)))!.water;
+      return cavities(world).find((pocket) => pocket.cells.includes(world.index(168, 102)))!.water;
     });
     expect(starters.some((water) => water === 0)).toBe(true);
     expect(starters.some((water) => water > 0)).toBe(true);
@@ -146,8 +175,8 @@ describe('finite seeded sites', () => {
       // The playable side of the foundation is flush at every depth.
       expect(world.isSolid(23, y)).toBe(true);
     }
-    expect(world.isSolid(24, 44)).toBe(false);
-    expect(world.isSolid(24, 105)).toBe(false);
+    expect(world.isSolid(24, 44)).toBe(true);
+    expect(world.isSolid(24, 105)).toBe(true);
     expect(world.isSolid(23, world.height - 1)).toBe(true);
   });
 
@@ -300,7 +329,7 @@ describe('finite seeded sites', () => {
 
   it.each(distributions)('keeps the starter pocket small enough to move on after a few loads in %s', (distribution) => {
     const world = generateSite(42, distribution).world;
-    const starter = cavities(world).find((body) => body.cells.includes(world.index(48, 102)))!;
+    const starter = cavities(world).find((body) => body.cells.includes(world.index(168, 102)))!;
     expect(starter.mass).toBeGreaterThanOrEqual(distribution === 'depth-weighted' ? 30 : 40);
     expect(starter.mass).toBeLessThanOrEqual(60);
   });
@@ -311,12 +340,12 @@ describe('finite seeded sites', () => {
       for (let mass = 30; mass <= 60; mass++) {
         sample.mockImplementation((_depth, classSample) => classSample === 0 ? mass : 30);
         const { world } = generateSite(42);
-        const starter = waterBodies(world).find((body) => body.cells.includes(world.index(48, 102)))!;
+        const starter = waterBodies(world).find((body) => body.cells.includes(world.index(168, 102)))!;
         expect(starter.mass).toBe(mass);
-        expect(Math.min(...starter.cells.map((cell) => cell % world.width))).toBe(43);
+        expect(Math.min(...starter.cells.map((cell) => cell % world.width))).toBe(163);
         expect(Math.max(...starter.cells.map((cell) => Math.floor(cell / world.width)))).toBe(105);
-        const origin = { x: 40 * 4, y: 102 * 4 };
-        const aim = { x: 52 * 4, y: 102 * 4 };
+        const origin = { x: 160 * 4, y: 102 * 4 };
+        const aim = { x: 172 * 4, y: 102 * 4 };
         const before = totalWater(world);
         expect(collectWater(world, origin, 28, 20)).toBe(0);
         for (let hit = 0; hit < 3; hit++) damageStrike(world, origin, aim, 12, 1);
@@ -331,7 +360,7 @@ describe('finite seeded sites', () => {
 
   it('allows returning up the starter shaft without any digging or upgrades', () => {
     const { world, surfaceY } = generateSite(42);
-    const player = createPlayer(24 * 4, 106 * 4 - 32);
+    const player = createPlayer(144 * 4, 106 * 4 - 32);
     const input = { left: true, right: false, up: true, down: false, jumpPressed: true };
     stepPlayer(world, player, input, 1 / 60);
     input.jumpPressed = false;
@@ -360,8 +389,8 @@ describe('finite seeded sites', () => {
 
   it.each(distributions)('lets a standing worker reach starter water with the initial tool in %s', (distribution) => {
     const { world } = generateSite(42, distribution);
-    const origin = { x: 40 * 4, y: 102 * 4 };
-    const aim = { x: 52 * 4, y: 102 * 4 };
+    const origin = { x: 160 * 4, y: 102 * 4 };
+    const aim = { x: 172 * 4, y: 102 * 4 };
     const before = totalWater(world);
     expect(collectWater(world, origin, 28, 20)).toBe(0);
     for (let hit = 0; hit < 3; hit++) damageStrike(world, origin, aim, 12, 1);

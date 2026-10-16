@@ -4,6 +4,11 @@ import { sampleWaterPocketVolume } from './water-pockets';
 export type WaterDistribution = 'depth-weighted' | 'many-small' | 'fewer-large';
 export const DEFAULT_WATER_DISTRIBUTION: WaterDistribution = 'depth-weighted';
 
+// Keep a substantial walk across the surface between the exchange and the
+// starter hole. Fixed cell coordinates keep seeded sites independent of zoom.
+const STARTER_SHAFT = { left: 144, right: 162, floor: 106 };
+const STARTER_POCKET = { centerX: 168, centerY: 102, left: 163, bottom: 105, earthRight: 185 };
+
 interface ReservoirBand {
   slots: readonly (readonly [number, number])[];
   masses: Record<Exclude<WaterDistribution, 'depth-weighted'>, readonly number[]>;
@@ -14,7 +19,7 @@ interface ReservoirBand {
 // three variable-volume classes at every depth, without quotas or budget conditioning.
 const RESERVOIR_BANDS: readonly ReservoirBand[] = [
   {
-    slots: [[80, 101], [140, 73], [210, 73], [275, 73], [345, 73], [210, 101], [275, 101], [345, 101]],
+    slots: [[200, 101], [110, 73], [210, 73], [275, 73], [345, 73], [75, 101], [275, 101], [345, 101]],
     masses: {
       'many-small': [20, 20, 20, 20, 20, 30, 65],
       'fewer-large': [40, 75, 80],
@@ -52,8 +57,9 @@ export function generateSite(seed: number, distribution: WaterDistribution = DEF
   const surfaceRow = 44;
 
   for (let x = 1; x < world.width - 1; x++) {
-    // Keep the machine, spawn, and shaft lip on one predictable platform.
-    const surface = x < 115 ? surfaceRow
+    // Keep the platform-to-hole walk and both shaft lips level; the terrain
+    // beyond the starter route retains its seeded undulations.
+    const surface = x <= STARTER_POCKET.earthRight ? surfaceRow
       : surfaceRow + Math.round(Math.sin(x / 33 + phase) * 5 + Math.sin(x / 13 + phase) * 2);
     for (let y = surface; y < world.height - 1; y++) {
       const stone = y > 77 + Math.sin(x / 37 + phase) * 9
@@ -70,11 +76,11 @@ export function generateSite(seed: number, distribution: WaterDistribution = DEF
 
   // Straight sides and a flat bottom guarantee the initial climb works without
   // wall digging. Starter water lies behind a thin earth wall beside the floor.
-  for (let y = surfaceRow; y < 106; y++) {
-    for (let x = 24; x < 42; x++) world.setMaterial(x, y, 0);
+  for (let y = surfaceRow; y < STARTER_SHAFT.floor; y++) {
+    for (let x = STARTER_SHAFT.left; x < STARTER_SHAFT.right; x++) world.setMaterial(x, y, 0);
   }
   for (let y = 90; y < 112; y++) {
-    for (let x = 42; x < 65; x++) world.setMaterial(x, y, 1);
+    for (let x = STARTER_SHAFT.right; x < STARTER_POCKET.earthRight; x++) world.setMaterial(x, y, 1);
   }
   // Every pocket, including the starter, independently has a one-in-five dry
   // draw. A separate stream keeps this choice independent of size and geology.
@@ -85,10 +91,11 @@ export function generateSite(seed: number, distribution: WaterDistribution = DEF
     // streams. Anchor its near wall and floor so every volume is reachable
     // with the initial pickaxe and remains sealed beside the starter shaft.
     const starterRandom = seededRandom(seed ^ 0x5a27e2);
-    const mass = sampleWaterPocketVolume(102 - surfaceRow, 0, starterRandom());
-    carveReservoir(world, 48, 102, mass, starterWater, { left: 43, bottom: 105 });
+    const mass = sampleWaterPocketVolume(STARTER_POCKET.centerY - surfaceRow, 0, starterRandom());
+    carveReservoir(world, STARTER_POCKET.centerX, STARTER_POCKET.centerY, mass, starterWater,
+      { left: STARTER_POCKET.left, bottom: STARTER_POCKET.bottom });
   } else {
-    carveEllipse(world, 48, 102, 5, 3, starterWater);
+    carveEllipse(world, STARTER_POCKET.centerX, STARTER_POCKET.centerY, 5, 3, starterWater);
   }
 
   // Reservoir randomness must not reroll the geology or dry draws when a
