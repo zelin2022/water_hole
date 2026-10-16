@@ -1,7 +1,7 @@
 import { type Point, type World } from './world';
 
 export const DIG_REACH_PADDING = 12;
-export const MATERIAL_DURABILITY: Readonly<Record<number, number>> = { 1: 1, 2: 3 };
+export const MATERIAL_DURABILITY: Readonly<Record<number, number>> = { 1: 1, 2: 3, 3: Infinity };
 
 export interface StrikeResult {
   damaged: number;
@@ -68,6 +68,12 @@ export function damageStrike(
           }
           continue;
         }
+        // Reinforced infrastructure intercepts the whole impact, even when the
+        // brush overlaps terrain behind it. It never receives damage cracks.
+        if (world.material[world.index(rayX, rayY)] === 3) {
+          blocked = true;
+          break;
+        }
         if (brushTouchesCell(rayX, rayY)) {
           lastRock = world.index(rayX, rayY);
           continue;
@@ -83,6 +89,7 @@ export function damageStrike(
   }
 
   for (const index of struck) {
+    if (world.material[index] === 3) continue;
     result.damaged++;
     world.damage[index] += damage;
     if (world.damage[index] >= (MATERIAL_DURABILITY[world.material[index]] ?? 1)) {

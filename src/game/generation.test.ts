@@ -34,8 +34,39 @@ function waterBodies(world: World): { mass: number; row: number; cells: number[]
   return bodies;
 }
 
-function depthBands(world: World): ReturnType<typeof waterBodies>[] {
-  const bodies = waterBodies(world);
+/** Sealed cavities include dry draws, and exclude the sky-connected starter shaft. */
+function cavities(world: World): { mass: number; row: number; cells: number[]; water: number }[] {
+  const visited = new Set<number>();
+  const bodies: { mass: number; row: number; cells: number[]; water: number }[] = [];
+  for (let i = 0; i < world.solid.length; i++) {
+    if (visited.has(i) || world.solid[i]) continue;
+    const cells = [i];
+    visited.add(i);
+    let skyConnected = false;
+    for (let j = 0; j < cells.length; j++) {
+      const cell = cells[j]!;
+      const x = cell % world.width;
+      const y = Math.floor(cell / world.width);
+      if (y === 1) skyConnected = true;
+      for (const [nx, ny] of [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]) {
+        if (!world.inBounds(nx!, ny!)) continue;
+        const neighbor = world.index(nx!, ny!);
+        if (visited.has(neighbor) || world.solid[neighbor]) continue;
+        visited.add(neighbor);
+        cells.push(neighbor);
+      }
+    }
+    if (!skyConnected) bodies.push({
+      cells, mass: cells.length,
+      row: cells.reduce((sum, cell) => sum + Math.floor(cell / world.width), 0) / cells.length,
+      water: cells.reduce((sum, cell) => sum + world.water[cell]!, 0),
+    });
+  }
+  return bodies;
+}
+
+function depthBands(world: World): ReturnType<typeof cavities>[] {
+  const bodies = cavities(world);
   return [bodies.filter((body) => body.row < 120),
     bodies.filter((body) => body.row >= 120 && body.row < 185),
     bodies.filter((body) => body.row >= 185)];
@@ -47,19 +78,92 @@ function median(values: number[]): number {
 }
 
 describe('finite seeded sites', () => {
+  it.each(distributions)('replaces separate hollow caves with occasional dry pockets in %s', (distribution) => {
+    const world = generateSite(42, distribution).world;
+    const pockets = cavities(world);
+    expect(pockets).toHaveLength(distribution === 'fewer-large' ? 16 : 28);
+    expect(pockets.some((pocket) => pocket.water === 0)).toBe(true);
+    expect(pockets.some((pocket) => pocket.water === pocket.mass)).toBe(true);
+    expect(pockets.every((pocket) => pocket.water === 0 || pocket.water === pocket.mass)).toBe(true);
+  });
+
+  it('rolls dryness independently of pocket size without excluding the starter', () => {
+    const sample = vi.spyOn(waterPockets, 'sampleWaterPocketVolume');
+    try {
+      sample.mockReturnValue(45);
+      const small = cavities(generateSite(42).world);
+      sample.mockReturnValue(60);
+      const larger = cavities(generateSite(42).world);
+      const centerX = (pocket: ReturnType<typeof cavities>[number]) =>
+        pocket.cells.reduce((sum, cell) => sum + cell % 384, 0) / pocket.mass;
+      for (const pocket of small) {
+        const closest = [...larger].sort((a, b) =>
+          Math.hypot(centerX(a) - centerX(pocket), a.row - pocket.row)
+          - Math.hypot(centerX(b) - centerX(pocket), b.row - pocket.row))[0]!;
+        expect(closest.water === 0).toBe(pocket.water === 0);
+      }
+      expect(small.every((pocket) => pocket.mass === 45)).toBe(true);
+      expect(larger.every((pocket) => pocket.mass === 60)).toBe(true);
+    } finally {
+      sample.mockRestore();
+    }
+    const starters = Array.from({ length: 40 }, (_, index) => {
+      const world = generateSite(Math.imul(index + 1, 0x9e3779b1) >>> 0).world;
+      return cavities(world).find((pocket) => pocket.cells.includes(world.index(48, 102)))!.water;
+    });
+    expect(starters.some((water) => water === 0)).toBe(true);
+    expect(starters.some((water) => water > 0)).toBe(true);
+  });
+
+  it('produces approximately one dry pocket in five without a fixed per-map quota', () => {
+    let dry = 0;
+    let total = 0;
+    const counts = new Set<number>();
+    for (let index = 0; index < 100; index++) {
+      const world = generateSite(Math.imul(index + 1, 0x9e3779b1) >>> 0).world;
+      const pockets = cavities(world);
+      const dryCount = pockets.filter((pocket) => pocket.water === 0).length;
+      dry += dryCount;
+      total += pockets.length;
+      counts.add(dryCount);
+    }
+    expect(dry / total).toBeGreaterThan(0.17);
+    expect(dry / total).toBeLessThan(0.23);
+    expect(counts.size).toBeGreaterThan(5);
+  });
+
+  it.each(distributions)('places the machine on a continuous left-edge foundation in %s', (distribution) => {
+    const { world, hopper, spawn, surfaceY } = generateSite(42, distribution);
+    expect(hopper).toEqual({ x: 48, y: 120 });
+    expect(spawn).toEqual({ x: 80, y: 144 });
+    expect(surfaceY).toBe(176);
+    for (let y = 44; y < world.height - 1; y++) {
+      for (let x = 1; x <= 23; x++) {
+        expect(world.material[world.index(x, y)]).toBe(3);
+        expect(world.isSolid(x, y)).toBe(true);
+        expect(world.water[world.index(x, y)]).toBe(0);
+      }
+      // The playable side of the foundation is flush at every depth.
+      expect(world.isSolid(23, y)).toBe(true);
+    }
+    expect(world.isSolid(24, 44)).toBe(false);
+    expect(world.isSolid(24, 105)).toBe(false);
+    expect(world.isSolid(23, world.height - 1)).toBe(true);
+  });
+
   it('keeps maximum-volume pockets sealed without rejecting a large-class draw', () => {
     const sample = vi.spyOn(waterPockets, 'sampleWaterPocketVolume')
       .mockImplementation((_depth, classSample) => classSample === 0 ? 45 : 240);
     try {
       for (let seed = 0; seed < 100; seed++) {
         const world = generateSite(Math.imul(seed + 1, 0x9e3779b1) >>> 0).world;
-        const bodies = waterBodies(world);
+        const bodies = cavities(world);
         expect(bodies).toHaveLength(28);
         expect(bodies.filter((body) => body.mass === 240)).toHaveLength(27);
         for (const body of bodies) {
           for (const cell of body.cells) {
             for (const neighbor of [cell - 1, cell + 1, cell - world.width, cell + world.width]) {
-              if (!world.water[neighbor]) expect(world.solid[neighbor]).toBe(1);
+              if (!body.cells.includes(neighbor)) expect(world.solid[neighbor]).toBe(1);
             }
           }
         }
@@ -71,12 +175,12 @@ describe('finite seeded sites', () => {
   it('defaults to three variable-volume pocket classes with enough water for the demo', () => {
     expect(DEFAULT_WATER_DISTRIBUTION).toBe('depth-weighted');
     const world = generateSite(42).world;
-    const bodies = waterBodies(world);
+    const bodies = cavities(world);
     expect(bodies).toHaveLength(28);
     expect(bodies.every((body) => Number.isInteger(body.mass) && body.mass >= 30 && body.mass <= 240)).toBe(true);
     expect(bodies.some((body) => ![45, 90, 180].includes(body.mass))).toBe(true);
     expect(new Set(bodies.map((body) => body.mass)).size).toBeGreaterThan(8);
-    expect(totalWater(world)).toBeGreaterThanOrEqual(840);
+    expect(totalWater(world)).toBeGreaterThanOrEqual(400);
   });
 
   it.each(distributions)('reproduces terrain and water for %s, while different seeds change the site', (distribution) => {
@@ -96,7 +200,7 @@ describe('finite seeded sites', () => {
     const { world, spawn, hopper, surfaceY } = generateSite(seed, distribution);
     expect(world.width).toBe(384);
     expect(world.height).toBe(256);
-    expect(totalWater(world)).toBeGreaterThanOrEqual(distribution === 'depth-weighted' ? 840 : 1500);
+    expect(totalWater(world)).toBeGreaterThanOrEqual(400);
     expect(world.isSolidAtPixel(spawn.x, spawn.y)).toBe(false);
     expect(world.isSolidAtPixel(spawn.x + 15, spawn.y + 31)).toBe(false);
     expect(world.isSolidAtPixel(spawn.x + 8, spawn.y + 32)).toBe(true);
@@ -109,8 +213,8 @@ describe('finite seeded sites', () => {
     for (let i = 0; i < world.water.length; i++) {
       if (world.water[i] > 0) expect(world.solid[i]).toBe(0);
     }
-    const bodies = waterBodies(world);
-    expect(bodies.length).toBeGreaterThanOrEqual(14);
+    const bodies = cavities(world);
+    expect(bodies).toHaveLength(distribution === 'fewer-large' ? 16 : 28);
     for (const body of bodies) {
       expect(body.mass).toBeGreaterThanOrEqual(distribution === 'depth-weighted' ? 30 : 15);
       expect(body.mass).toBeLessThanOrEqual(distribution === 'depth-weighted' ? 240 : 185);
@@ -118,7 +222,7 @@ describe('finite seeded sites', () => {
       // a neighboring reservoir, the starter shaft, or an air-filled cave.
       for (const cell of body.cells) {
         for (const neighbor of [cell - 1, cell + 1, cell - world.width, cell + world.width]) {
-          if (!world.water[neighbor]) expect(world.solid[neighbor]).toBe(1);
+          if (!body.cells.includes(neighbor)) expect(world.solid[neighbor]).toBe(1);
         }
       }
     }
@@ -127,21 +231,22 @@ describe('finite seeded sites', () => {
   it.each([0, 1, 42, 999, 0xffffffff])('compares discovery frequency without changing depth budgets for seed %i', (seed) => {
     const small = generateSite(seed, 'many-small').world;
     const large = generateSite(seed, 'fewer-large').world;
-    const smallBodies = waterBodies(small);
-    const largeBodies = waterBodies(large);
+    const smallBodies = cavities(small);
+    const largeBodies = cavities(large);
     expect(smallBodies.length).toBeGreaterThanOrEqual(largeBodies.length * 1.5);
     expect(median(smallBodies.map((body) => body.mass))).toBeLessThan(median(largeBodies.map((body) => body.mass)) * 0.75);
-    expect(totalWater(small)).toBeCloseTo(totalWater(large), 6);
+    expect(smallBodies.reduce((sum, body) => sum + body.mass, 0))
+      .toBe(largeBodies.reduce((sum, body) => sum + body.mass, 0));
     const smallBands = depthBands(small);
     const largeBands = depthBands(large);
     for (let band = 0; band < 3; band++) {
-      const sum = (bodies: ReturnType<typeof waterBodies>) => bodies.reduce((mass, body) => mass + body.mass, 0);
+      const sum = (bodies: ReturnType<typeof cavities>) => bodies.reduce((mass, body) => mass + body.mass, 0);
       expect(sum(smallBands[band]!)).toBeCloseTo(sum(largeBands[band]!), 6);
     }
     expect(smallBands[0]!.reduce((mass, body) => mass + body.mass, 0)).toBeLessThan(400);
     // Changing the comparison must not reroll the underlying geology or caves.
     for (let cell = 0; cell < small.water.length; cell++) {
-      if (!small.water[cell] && !large.water[cell]) expect(small.material[cell]).toBe(large.material[cell]);
+      if (small.solid[cell] && large.solid[cell]) expect(small.material[cell]).toBe(large.material[cell]);
     }
   });
 
@@ -165,7 +270,7 @@ describe('finite seeded sites', () => {
     const totals = new Set<number>();
     for (let seed = 0; seed < 32; seed++) {
       const { world } = generateSite(seed);
-      const bodies = waterBodies(world);
+      const bodies = cavities(world);
       expect(bodies).toHaveLength(28);
       for (const body of bodies) {
         expect(body.mass).toBeGreaterThanOrEqual(30);
@@ -190,12 +295,12 @@ describe('finite seeded sites', () => {
     const before = totalWater(world);
     stepWater(world, 1 / 60);
     expect(totalWater(world)).toBeCloseTo(before, 10);
-    expect(waterBodies(world)).toHaveLength(distribution === 'fewer-large' ? 16 : 28);
+    expect(waterBodies(world).length).toBe(cavities(world).filter((pocket) => pocket.water > 0).length);
   });
 
   it.each(distributions)('keeps the starter pocket small enough to move on after a few loads in %s', (distribution) => {
     const world = generateSite(42, distribution).world;
-    const starter = waterBodies(world).find((body) => body.cells.includes(world.index(112, 102)))!;
+    const starter = cavities(world).find((body) => body.cells.includes(world.index(48, 102)))!;
     expect(starter.mass).toBeGreaterThanOrEqual(distribution === 'depth-weighted' ? 30 : 40);
     expect(starter.mass).toBeLessThanOrEqual(60);
   });
@@ -206,12 +311,12 @@ describe('finite seeded sites', () => {
       for (let mass = 30; mass <= 60; mass++) {
         sample.mockImplementation((_depth, classSample) => classSample === 0 ? mass : 30);
         const { world } = generateSite(42);
-        const starter = waterBodies(world).find((body) => body.cells.includes(world.index(112, 102)))!;
+        const starter = waterBodies(world).find((body) => body.cells.includes(world.index(48, 102)))!;
         expect(starter.mass).toBe(mass);
-        expect(Math.min(...starter.cells.map((cell) => cell % world.width))).toBe(107);
+        expect(Math.min(...starter.cells.map((cell) => cell % world.width))).toBe(43);
         expect(Math.max(...starter.cells.map((cell) => Math.floor(cell / world.width)))).toBe(105);
-        const origin = { x: 104 * 4, y: 102 * 4 };
-        const aim = { x: 116 * 4, y: 102 * 4 };
+        const origin = { x: 40 * 4, y: 102 * 4 };
+        const aim = { x: 52 * 4, y: 102 * 4 };
         const before = totalWater(world);
         expect(collectWater(world, origin, 28, 20)).toBe(0);
         for (let hit = 0; hit < 3; hit++) damageStrike(world, origin, aim, 12, 1);
@@ -226,7 +331,7 @@ describe('finite seeded sites', () => {
 
   it('allows returning up the starter shaft without any digging or upgrades', () => {
     const { world, surfaceY } = generateSite(42);
-    const player = createPlayer(88 * 4, 106 * 4 - 32);
+    const player = createPlayer(24 * 4, 106 * 4 - 32);
     const input = { left: true, right: false, up: true, down: false, jumpPressed: true };
     stepPlayer(world, player, input, 1 / 60);
     input.jumpPressed = false;
@@ -234,10 +339,29 @@ describe('finite seeded sites', () => {
     expect(player.y + player.height).toBeLessThanOrEqual(surfaceY + 1);
   });
 
+  it('lets the starting worker climb from the map bottom onto the hopper platform after excavation', () => {
+    const { world, hopper, surfaceY } = generateSite(42);
+    // Remove all diggable underground terrain, including beneath the machine.
+    // The surviving support must have a continuous face and a mountable top.
+    for (let y = 44; y < world.height - 1; y++) {
+      for (let x = 1; x < world.width - 1; x++) world.setMaterial(x, y, 0);
+    }
+    const player = createPlayer(96, (world.height - 1) * world.cellSize - 32);
+    const input = { left: true, right: false, up: true, down: false, jumpPressed: true };
+    stepPlayer(world, player, input, 1 / 60);
+    input.jumpPressed = false;
+    for (let frame = 0; frame < 900; frame++) stepPlayer(world, player, input, 1 / 60);
+    expect(player.y + player.height).toBeCloseTo(surfaceY, 3);
+    expect(player.grounded).toBe(true);
+    expect(player.x + player.width).toBeLessThanOrEqual(96);
+    expect(Math.hypot(player.x + player.width / 2 - hopper.x,
+      player.y + player.height / 2 - hopper.y)).toBeLessThan(96);
+  });
+
   it.each(distributions)('lets a standing worker reach starter water with the initial tool in %s', (distribution) => {
     const { world } = generateSite(42, distribution);
-    const origin = { x: 104 * 4, y: 102 * 4 };
-    const aim = { x: 116 * 4, y: 102 * 4 };
+    const origin = { x: 40 * 4, y: 102 * 4 };
+    const aim = { x: 52 * 4, y: 102 * 4 };
     const before = totalWater(world);
     expect(collectWater(world, origin, 28, 20)).toBe(0);
     for (let hit = 0; hit < 3; hit++) damageStrike(world, origin, aim, 12, 1);

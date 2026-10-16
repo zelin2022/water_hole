@@ -4,6 +4,15 @@ import { totalWater } from './water';
 import { World } from './world';
 
 describe('small detached dirt islands', () => {
+  it('preserves reinforced foundation and the dirt attached to it', () => {
+    const world = new World(20, 20, 4);
+    world.setMaterial(5, 5, 3);
+    world.setMaterial(6, 5, 1);
+    expect(detachSmallDirt(world)).toEqual([]);
+    expect(world.material[world.index(5, 5)]).toBe(3);
+    expect(world.isSolid(6, 5)).toBe(true);
+  });
+
   it('clears a one-cell island immediately without touching water', () => {
     const world = new World(20, 20, 4);
     world.setMaterial(5, 5, 1);

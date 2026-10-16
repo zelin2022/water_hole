@@ -3,6 +3,21 @@ import { damageStrike, strikeCenter } from './digging';
 import { World } from './world';
 
 describe('pickaxe geometry and damage', () => {
+  it('stops even a powerful wide strike at reinforced foundation without damaging rock behind it', () => {
+    const world = new World(30, 20);
+    for (let y = 1; y < 19; y++) world.setMaterial(10, y, 3);
+    world.setMaterial(13, 7, 1);
+    const version = world.terrainVersion;
+    for (let strike = 0; strike < 3; strike++) {
+      expect(damageStrike(world, { x: 30, y: 30 }, { x: 100, y: 30 }, 12, 100))
+        .toMatchObject({ damaged: 0, removed: 0 });
+    }
+    expect(world.material[world.index(10, 7)]).toBe(3);
+    expect(world.isSolid(13, 7)).toBe(true);
+    expect(world.damage.every(value => value === 0)).toBe(true);
+    expect(world.terrainVersion).toBe(version);
+  });
+
   it('uses aim direction at a fixed radius-dependent distance, including nearby aim', () => {
     const origin = { x: 30, y: 30 };
     expect(strikeCenter(origin, { x: 31, y: 30 }, 12)).toEqual({ x: 54, y: 30 });

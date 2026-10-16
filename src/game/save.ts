@@ -48,7 +48,7 @@ export function deserializeSession(json: string): Session {
     && raw.width * raw.height <= MAX_CELLS && finite(raw.cellSize, 1, 32), 'world dimensions');
   const count = raw.width * raw.height;
   assert(numericArray(raw.solid, count, 0, 1, true), 'solid cells');
-  assert(numericArray(raw.material, count, 0, 2, true), 'terrain materials');
+  assert(numericArray(raw.material, count, 0, 3, true), 'terrain materials');
   assert(numericArray(raw.damage, count, 0, 3), 'terrain damage');
   assert(numericArray(raw.water, count, 0, 1.000001), 'liquid cells');
   assert(numericArray(state.explored, count, 0, 1, true), 'exploration');
@@ -59,6 +59,7 @@ export function deserializeSession(json: string): Session {
     assert(Boolean(raw.material[index]) === Boolean(raw.solid[index]), 'material does not match terrain');
     assert(!raw.solid[index] || raw.water[index] === 0, 'water inside terrain');
     assert(raw.solid[index] || raw.damage[index] === 0, 'damage in empty space');
+    assert(raw.material[index] !== 3 || raw.damage[index] === 0, 'damaged foundation');
     assert(raw.damage[index] < (raw.material[index] === 2 ? 3 : 1), 'broken terrain left solid');
   }
   const extentX = raw.width * raw.cellSize, extentY = raw.height * raw.cellSize;

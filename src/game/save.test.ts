@@ -22,7 +22,8 @@ function stockedSession(waterDistribution?: SessionOptions['waterDistribution'])
   session.time = 9;
   session.sonar = { origin: {x:100,y:100}, startedAt:8,maxRadius:800 };
   session.lastSonarAt = 8;
-  const solidIndex = session.world.solid.findIndex((value, index) => value > 0 && index > session.world.width * 50 && index % session.world.width > 2);
+  const solidIndex = session.world.solid.findIndex((value, index) => value > 0
+    && session.world.material[index] !== 3 && index > session.world.width * 50 && index % session.world.width > 2);
   session.world.damage[solidIndex] = 0.5;
   return session;
 }
@@ -34,6 +35,46 @@ function corrupt(change: (data: any) => void) {
 }
 
 describe('versioned local saves', () => {
+  it('round-trips reinforced foundation with its indestructibility and water ledger intact', () => {
+    const session = createSession({ seed: 42 });
+    session.world.setMaterial(30, 30, 3);
+    const restored = deserializeSession(serializeSession(session));
+    expect(restored.world.material).toEqual(session.world.material);
+    expect(restored.world.solid).toEqual(session.world.solid);
+    restored.world.setSolid(30, 30, false);
+    expect(restored.world.material[restored.world.index(30, 30)]).toBe(3);
+    expect(totalWater(restored.world)).toBeCloseTo(restored.initialWater, 5);
+  });
+
+  it('rejects damaged reinforced foundation and unknown terrain materials in saves', () => {
+    expect(() => deserializeSession(corrupt(data => {
+      const index = data.world.width * 30 + 30;
+      data.world.solid[index] = 1;
+      data.world.material[index] = 3;
+      data.world.damage[index] = 0.1;
+    }))).toThrow(/foundation/);
+    expect(() => deserializeSession(corrupt(data => data.world.material[0] = 4))).toThrow(/terrain materials/);
+  });
+
+  it('preserves a saved earlier world without adding a foundation or moving its machine', () => {
+    const data = JSON.parse(serializeSession(createSession({ seed: 42 })));
+    // Earlier sites have ordinary earth in this strip; loading uses their actual
+    // stored terrain rather than upgrading them to the new generated layout.
+    for (let y = 44; y < data.world.height - 1; y++) {
+      for (let x = 1; x < 24; x++) {
+        const index = y * data.world.width + x;
+        data.world.solid[index] = 1;
+        data.world.material[index] = 1;
+        data.world.damage[index] = 0;
+      }
+    }
+    data.session.hopper = { x: 160, y: 120 };
+    const restored = deserializeSession(JSON.stringify(data));
+    expect(Array.from(restored.world.material)).toEqual(data.world.material);
+    expect(Array.from(restored.world.water)).toEqual(data.world.water);
+    expect(restored.hopper).toEqual(data.session.hopper);
+  });
+
   it('migrates remembered caves to dark caves while preserving every other saved field', () => {
     const session = stockedSession();
     expect(buyUpgrade(session.tank, 'sonar')).toBe(true);

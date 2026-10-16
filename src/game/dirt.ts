@@ -9,7 +9,7 @@ export const DIRT_TERMINAL_SPEED = 640;
 
 /**
  * A bounded flood fill needs at most four dirt cells to reject a large island.
- * Stone contact anchors dirt, even when that stone itself is floating. Strike
+ * Stone or reinforced foundation anchors dirt, even when itself floating. Strike
  * cleanup only considers nearby seeds; generation uses the one-time full scan.
  */
 export function detachSmallDirt(world: World, region?: DirtRegion): FallingDirt[] {
@@ -33,7 +33,7 @@ export function detachSmallDirt(world: World, region?: DirtRegion): FallingDirt[
         const index = component[cursor];
         examined.add(index);
         for (const neighbor of [index - 1, index + 1, index - world.width, index + world.width]) {
-          if (world.material[neighbor] === 2) { attached = true; break; }
+          if (world.material[neighbor] >= 2) { attached = true; break; }
           if (world.material[neighbor] !== 1 || included.has(neighbor)) continue;
           included.add(neighbor);
           component.push(neighbor);

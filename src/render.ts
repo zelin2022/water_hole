@@ -129,9 +129,9 @@ export class Renderer {
     const terrainContext = this.terrain.getContext('2d')!;
     const layer = this.materialLayer.getContext('2d')!;
     const materials = world.material;
-    for (const material of [1, 2]) {
+    for (const material of [1, 2, 3]) {
       layer.globalCompositeOperation = 'source-over'; layer.clearRect(0, 0, this.materialLayer.width, this.materialLayer.height);
-      layer.fillStyle = material === 1 ? '#806852' : '#596063';
+      layer.fillStyle = material === 1 ? '#806852' : material === 2 ? '#596063' : '#727970';
       for (let y = 0; y < world.height; y++) {
         let start = -1;
         for (let x = 0; x <= world.width; x++) {
@@ -140,8 +140,24 @@ export class Renderer {
           if (!match && start >= 0) { layer.fillRect(start * s, y * s, (x - start) * s, s); start = -1; }
         }
       }
-      // Large stable facets are clipped to each material, never tiled per cell.
+      // Surface details stay clipped to actual solid cells, including the support.
       layer.globalCompositeOperation = 'source-atop';
+      if (material === 3) {
+        // Broad concrete lifts and recessed form ties distinguish manufactured
+        // support from geological facets without adding a collision-free ledge.
+        for (let y = 0; y < this.terrain.height; y += 48) {
+          layer.fillStyle = '#555f5b'; layer.fillRect(0, y, this.terrain.width, 1.5);
+          layer.fillStyle = '#8b9185'; layer.fillRect(0, y + 1.5, this.terrain.width, 1);
+          for (let x = 16; x < this.terrain.width; x += 32) {
+            layer.fillStyle = '#68726a'; layer.fillRect(x, y + 3, 1, 44);
+            layer.fillStyle = '#485752'; layer.fillRect(x + 10, y + 18, 2.5, 2.5);
+            layer.fillStyle = '#9b9e8b'; layer.fillRect(x + 10, y + 20.5, 2.5, 0.8);
+          }
+        }
+        layer.globalCompositeOperation = 'source-over'; terrainContext.drawImage(this.materialLayer, 0, 0);
+        continue;
+      }
+      // Large stable facets are clipped to each natural material, never tiled per cell.
       const shades = material === 1 ? ['#8e755c', '#74604e', '#9a8063', '#80694f'] : ['#666c6d', '#4f5559', '#707475', '#5c6161'];
       const fw = material === 1 ? 66 : 48;
       const fh = material === 1 ? 42 : 36;
@@ -169,12 +185,19 @@ export class Renderer {
         const index = world.index(x, y);
         if (!world.solid[index]) continue;
         const px = x * s; const py = y * s; const earth = world.material[index] === 1;
+        const reinforced = world.material[index] === 3;
         if (!world.isSolid(x, y - 1)) {
-          ctx.fillStyle = earth ? '#b09673' : '#92938a'; ctx.fillRect(px, py, s, 1.8);
+          ctx.fillStyle = earth ? '#b09673' : reinforced ? '#bec1a7' : '#92938a'; ctx.fillRect(px, py, s, 1.8);
           ctx.fillStyle = '#15202424'; ctx.fillRect(px, py + 2, s, 2);
         }
-        if (!world.isSolid(x - 1, y)) { ctx.fillStyle = earth ? '#a18968' : '#7b8281'; ctx.fillRect(px, py, 1.6, s); }
-        if (!world.isSolid(x + 1, y)) { ctx.fillStyle = '#25303380'; ctx.fillRect(px + s - 1.5, py, 1.5, s); }
+        if (!world.isSolid(x - 1, y)) { ctx.fillStyle = earth ? '#a18968' : reinforced ? '#a6af98' : '#7b8281'; ctx.fillRect(px, py, 1.6, s); }
+        if (!world.isSolid(x + 1, y)) {
+          ctx.fillStyle = '#25303380'; ctx.fillRect(px + s - 1.5, py, 1.5, s);
+          if (reinforced) {
+            ctx.fillStyle = '#354442'; ctx.fillRect(px + s - 3, py, 3, s);
+            ctx.fillStyle = '#b09d6b'; ctx.fillRect(px + s - 2, py, 1, s);
+          }
+        }
         if (!world.isSolid(x, y + 1)) { ctx.fillStyle = '#1c292b80'; ctx.fillRect(px, py + s - 2, s, 2); }
         if (world.damage[index] > 0) {
           ctx.strokeStyle = '#252b2c'; ctx.lineWidth = 0.8;

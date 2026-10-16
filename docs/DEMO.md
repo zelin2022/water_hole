@@ -13,6 +13,8 @@ The demo develops the excavation and water-selling loop into a presentable Steam
 - Add terrain variety, smaller water pockets, and a slower, visible transfer of water into the hopper.
 - Detached dirt islands of one to three cells fall and disappear on landing, clearing small floating obstacles. Shared-edge contact with other solid terrain anchors a dirt group. Larger islands and stone do not collapse. Falling fragments are nonblocking and do not displace water.
 - Keep water accounted for across terrain, the tank, and the machine. Credit only the amount actually transferred, including interrupted transfers.
+- Put the exchange on a small reinforced platform at the left map boundary, supported by an indestructible foundation down to the map bottom. Its right face must remain climbable with initial equipment and meet the platform without an overhang. Keep the diggable map connected to its right. New expeditions use this placement; older saved worlds retain their actual terrain and machine.
+- Each pocket independently starts dry with probability 1/5, including the starter and both legacy layouts. Dryness uses a separate seeded draw from size, volume, and placement. Keep cavity geometry identical whether wet or dry, and keep the water detector truthful. Remove the three separate pre-carved hollow caves; broader hollow-cave design belongs after the demo.
 
 ## Water-pocket comparison
 
@@ -48,7 +50,7 @@ small / medium = medium / large = r(d)
 small : medium : large = r(d)^2 : r(d) : 1
 ```
 
-Normalize those weights before sampling each pocket independently. Depth uses the HUD's metres: pocket centre row minus the starter surface row (44), rather than world pixels. The finite map has 28 pockets including the starter, providing at least 840 water. The total varies by seed; do not condition draws on a water budget or force a size into each depth band, which would change the requested odds.
+Normalize those weights before sampling each pocket independently. Depth uses the HUD's metres: pocket centre row minus the starter surface row (44), rather than world pixels. The finite map has 28 pockets including the starter, with at least 840 units of cavity capacity before dry rolls. Actual water varies by seed and independently sampled dryness; do not condition draws on a water budget or force a size or wet quota into each depth band, which would change the requested odds.
 
 | Depth | Small chance | Medium chance | Large chance |
 | --- | --- | --- | --- |
@@ -62,16 +64,16 @@ Shallow water supply now varies with both class draws and volume variation. Tune
 
 ### Legacy depth-band comparisons
 
-The two earlier comparison layouts retain their original volume variation and identical water budget at each depth. Their shallow supply stays below the demo cutoff to encourage deeper exploration. They are benchmarks for playtesting the new formula, with provisional pacing values.
+The two earlier comparison layouts retain their original volume variation and identical cavity-capacity budget at each depth. Independent dry rolls reduce actual water below these capacities. Their shallow supply stays below the demo cutoff to encourage deeper exploration. They are benchmarks for playtesting the new formula, with provisional pacing values.
 
-| Depth band | Many small: pocket count | Fewer large: pocket count | Water in either preset |
+| Depth band | Many small: pocket count | Fewer large: pocket count | Capacity in either preset |
 | --- | --- | --- | --- |
 | Shallow, including the shared 45-unit starter | 8 | 4 | 240 |
 | Middle | 10 | 5 | 600 |
 | Deep | 10 | 7 | 1,100 |
 | Total | 28 | 16 | 1,940 |
 
-These legacy bands use pocket centre rows below 120, 120–184, and 185 onward on the 256-row map. Seeded variation changes individual volumes and positions while preserving each band's budget. The next shallow pocket is near the starter in both presets. Layout changes apply to new expeditions; loading an earlier save keeps its existing pockets.
+These legacy bands use pocket centre rows below 120, 120–184, and 185 onward on the 256-row map. Seeded variation changes individual volumes and positions while preserving each band's capacity budget before dry rolls. The next shallow pocket is near the starter in both presets. Layout changes apply to new expeditions; loading an earlier save keeps its existing pockets.
 
 ### Sonar timing
 
@@ -163,7 +165,7 @@ Artifact placement, artifact signals, and artifact recovery are excluded from th
 
 Continue test-driven development: write a meaningful failing behaviour test, confirm the expected failure, implement the smallest change, then refactor with tests passing. Keep simulation and progression independent of rendering and Electron.
 
-Test grounded stepping in both directions, ascent/descent caps, headroom, swept-path collisions, and jumping/airborne exclusions alongside falling-only attachment, detachment suppression, the wall-dig purchase restriction, strike timing and damage, fixed digging distance, upgrades, detector behaviour, water conservation during transfer, save/load, comparison-mode restoration, and the delivery cutoff. Test generated sites deterministically across seeds and both distributions: accessible starter water, separated bodies, depth-based volume variation, comparable budgets, and enough water for the demo. Test sonar around bends, sealed pockets, both faces of thin walls, diagonal gaps, excavation changes, timing/fade and cooldown. Verify the retained scanner penetrates independently while its purchase stays hidden. Preserve legacy saved worlds and equipment when adding new options or items.
+Test grounded stepping in both directions, ascent/descent caps, headroom, swept-path collisions, and jumping/airborne exclusions alongside falling-only attachment, detachment suppression, the wall-dig purchase restriction, strike timing and damage, fixed digging distance, upgrades, detector behaviour, water conservation during transfer, save/load, comparison-mode restoration, and the delivery cutoff. Test generated sites deterministically across seeds and all three distributions: initial tool reach when the starter is wet, separated cavities, depth-based volume variation, comparable legacy capacity budgets, independent 20% dry rolls including the starter, and sufficient actual water across sampled sites. Verify reinforced support cannot be removed or damaged, blocks strikes, survives save/load, and remains climbable from the map bottom onto the platform after excavation. Test sonar around bends, sealed pockets, both faces of thin walls, diagonal gaps, excavation changes, timing/fade and cooldown. Verify the retained scanner penetrates independently while its purchase stays hidden. Preserve legacy saved worlds and equipment when adding new options or items.
 
 Test the formula's adjacent ratios, normalized probabilities, sampling thresholds, and aggregate generated-pocket frequencies. Verify independent volume variation, inclusive class bounds, varying starter volumes with reliable initial reach, separation of maximum 240-unit pockets, and water conservation after liquid stepping. Playtest the new default and both legacy layouts, including selection and save/load restoration. Check that explored unlit caves stay dark before and after sonar fades, including when loading an older remembered-outline save. Check mouse-aimed lighting and visible head rotation, digging feel, readable darkness, discovery, movement, sound, menus, keybindings, and progression manually. Before finishing implementation changes, run `npm test` and `npm run build`, and playtest control/rendering changes in the browser or Electron.
 

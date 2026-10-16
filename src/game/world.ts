@@ -3,13 +3,13 @@ export interface Point {
   y: number;
 }
 
-export type Material = 0 | 1 | 2;
+export type Material = 0 | 1 | 2 | 3;
 
 /** A finite terrain grid. Positions outside its sealed boundary are solid. */
 export class World {
   readonly solid: Uint8Array;
   readonly water: Float32Array;
-  /** 0 = air, 1 = earth, 2 = stone. Keep edits synchronized through setMaterial. */
+  /** 0 = air, 1 = earth, 2 = stone, 3 = reinforced foundation. */
   readonly material: Uint8Array;
   /** Accumulated pickaxe damage, reset when a cell changes material or breaks. */
   readonly damage: Float32Array;
@@ -65,12 +65,12 @@ export class World {
     this.setMaterial(cellX, cellY, solid ? material || 1 : 0);
   }
 
-  /** Solid replacement never destroys water; the outer boundary is immutable. */
+  /** Solid replacement never destroys water; boundary and placed foundation are immutable. */
   setMaterial(cellX: number, cellY: number, material: Material): void {
     if (!this.inBounds(cellX, cellY) || this.isBoundary(cellX, cellY)) return;
-    if (material !== 0 && material !== 1 && material !== 2) throw new RangeError('Unknown terrain material.');
+    if (material !== 0 && material !== 1 && material !== 2 && material !== 3) throw new RangeError('Unknown terrain material.');
     const index = this.index(cellX, cellY);
-    if (this.material[index] === material) return;
+    if (this.material[index] === material || this.material[index] === 3) return;
     if (material && this.water[index] > 0) {
       throw new Error('Cannot make a water-filled cell solid.');
     }
@@ -111,7 +111,7 @@ export function dig(world: World, origin: Point, aim: Point, radius: number, rea
       const cellY = (y + 0.5) * size;
       if ((cellX - centerX) ** 2 + (cellY - centerY) ** 2 > radiusSquared
         || (cellX - origin.x) ** 2 + (cellY - origin.y) ** 2 > reachSquared
-        || !world.isSolid(x, y)) continue;
+        || !world.isSolid(x, y) || world.material[world.index(x, y)] === 3) continue;
       world.setSolid(x, y, false);
       removed++;
     }

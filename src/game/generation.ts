@@ -9,26 +9,26 @@ interface ReservoirBand {
   masses: Record<Exclude<WaterDistribution, 'depth-weighted'>, readonly number[]>;
 }
 
-// The two legacy comparisons retain their previous maps and equal depth-band
-// budgets. The new default reuses the many-small locations but samples one of
+// The two legacy comparisons retain their equal cavity-capacity depth bands.
+// The new default reuses the many-small locations but samples one of
 // three variable-volume classes at every depth, without quotas or budget conditioning.
 const RESERVOIR_BANDS: readonly ReservoirBand[] = [
   {
-    slots: [[140, 101], [140, 73], [210, 73], [275, 73], [345, 73], [210, 101], [275, 101], [345, 101]],
+    slots: [[80, 101], [140, 73], [210, 73], [275, 73], [345, 73], [210, 101], [275, 101], [345, 101]],
     masses: {
       'many-small': [20, 20, 20, 20, 20, 30, 65],
       'fewer-large': [40, 75, 80],
     },
   },
   {
-    slots: [133, 169].flatMap((row) => [35, 100, 175, 230, 350].map((column) => [column, row] as const)),
+    slots: [133, 169].flatMap((row) => [55, 100, 175, 230, 350].map((column) => [column, row] as const)),
     masses: {
       'many-small': [35, 40, 45, 45, 50, 55, 60, 70, 90, 110],
       'fewer-large': [80, 110, 125, 140, 145],
     },
   },
   {
-    slots: [200, 233].flatMap((row) => [35, 105, 180, 250, 355].map((column) => [column, row] as const)),
+    slots: [200, 233].flatMap((row) => [55, 105, 180, 250, 355].map((column) => [column, row] as const)),
     masses: {
       'many-small': [60, 75, 85, 95, 105, 115, 125, 140, 145, 155],
       'fewer-large': [120, 140, 155, 160, 170, 175, 180],
@@ -62,39 +62,42 @@ export function generateSite(seed: number, distribution: WaterDistribution = DEF
     }
   }
 
+  // A narrow, indestructible platform joins the left map boundary and extends
+  // to the sealed bottom. Its flush right face remains climbable after digging.
+  for (let y = surfaceRow; y < world.height - 1; y++) {
+    for (let x = 1; x < 24; x++) world.setMaterial(x, y, 3);
+  }
+
   // Straight sides and a flat bottom guarantee the initial climb works without
   // wall digging. Starter water lies behind a thin earth wall beside the floor.
   for (let y = surfaceRow; y < 106; y++) {
-    for (let x = 88; x < 106; x++) world.setMaterial(x, y, 0);
+    for (let x = 24; x < 42; x++) world.setMaterial(x, y, 0);
   }
   for (let y = 90; y < 112; y++) {
-    for (let x = 106; x < 129; x++) world.setMaterial(x, y, 1);
+    for (let x = 42; x < 65; x++) world.setMaterial(x, y, 1);
   }
+  // Every pocket, including the starter, independently has a one-in-five dry
+  // draw. A separate stream keeps this choice independent of size and geology.
+  const dryRandom = seededRandom(seed ^ 0x54d12a);
+  const starterWater = dryRandom() >= 1 / 5;
   if (distribution === 'depth-weighted') {
     // Vary the tutorial pocket without consuming the geology or later-pocket
     // streams. Anchor its near wall and floor so every volume is reachable
     // with the initial pickaxe and remains sealed beside the starter shaft.
     const starterRandom = seededRandom(seed ^ 0x5a27e2);
     const mass = sampleWaterPocketVolume(102 - surfaceRow, 0, starterRandom());
-    carveReservoir(world, 112, 102, mass, { left: 107, bottom: 105 });
+    carveReservoir(world, 48, 102, mass, starterWater, { left: 43, bottom: 105 });
   } else {
-    carveEllipse(world, 112, 102, 5, 3, true);
+    carveEllipse(world, 48, 102, 5, 3, starterWater);
   }
 
-  // Air-filled caves diversify excavation without creating fragile overhangs on
-  // the starter shaft. These stay clear of reservoir placement bands.
-  for (const [cx, cy] of [[170, 112], [265, 161], [320, 210]]) {
-    const rx = 11 + Math.floor(random() * 5);
-    carveEllipse(world, cx!, cy!, rx, 6, false);
-  }
-
-  // Reservoir randomness must not reroll the geology or air caves when a
+  // Reservoir randomness must not reroll the geology or dry draws when a
   // player switches distributions for the same seed.
   const reservoirRandom = seededRandom(seed ^ 0x57a7e2);
   for (const [bandIndex, band] of RESERVOIR_BANDS.entries()) {
     const masses = distribution === 'depth-weighted'
       ? null : varyMasses(band.masses[distribution], reservoirRandom);
-    // Both comparisons guarantee a second find close to the starter pocket.
+    // Both comparisons keep a second cavity close to the starter pocket.
     const slots = bandIndex === 0
       ? [band.slots[0]!, ...shuffle(band.slots.slice(1), reservoirRandom)]
       : shuffle(band.slots, reservoirRandom);
@@ -105,7 +108,7 @@ export function generateSite(seed: number, distribution: WaterDistribution = DEF
         // One terrain row is one HUD metre; world pixels would exaggerate
         // the depth bias by the four-pixel cell size.
         const mass = sampleWaterPocketVolume(cy - surfaceRow, reservoirRandom(), reservoirRandom());
-        carveReservoir(world, cx, cy, mass);
+        carveReservoir(world, cx, cy, mass, dryRandom() >= 1 / 5);
       }
       continue;
     }
@@ -113,24 +116,24 @@ export function generateSite(seed: number, distribution: WaterDistribution = DEF
       const [column, row] = slots[index]!;
       const cx = column + Math.floor(reservoirRandom() * 9) - 4;
       const cy = row + Math.floor(reservoirRandom() * 7) - 3;
-      carveReservoir(world, cx, cy, mass);
+      carveReservoir(world, cx, cy, mass, dryRandom() >= 1 / 5);
     }
   }
 
   return {
     world,
-    spawn: { x: 232, y: surfaceRow * world.cellSize - 32 },
-    hopper: { x: 160, y: surfaceRow * world.cellSize - 56 },
+    spawn: { x: 80, y: surfaceRow * world.cellSize - 32 },
+    hopper: { x: 48, y: surfaceRow * world.cellSize - 56 },
     surfaceY: surfaceRow * world.cellSize,
   };
 }
 
-function carveReservoir(world: World, cx: number, cy: number, mass: number,
+function carveReservoir(world: World, cx: number, cy: number, mass: number, water: boolean,
   anchor?: { left: number; bottom: number }): void {
   // Select the closest cells in elliptical distance, rather than filling a
   // rounded ellipse with a variable volume. Every chosen cell has a neighbor
-  // closer to the center, so the pocket stays connected and holds exactly its
-  // assigned integer mass without partial cells or erased water.
+  // closer to the center, so the pocket stays connected and has exactly its
+  // assigned capacity. Wet draws fill every cell; dry draws leave the same shape.
   const aspect = 2.2;
   const rx = Math.sqrt(mass * aspect / Math.PI);
   const ry = Math.sqrt(mass / (aspect * Math.PI));
@@ -153,7 +156,7 @@ function carveReservoir(world: World, cx: number, cy: number, mass: number,
   // Placement bands provide several terrain cells of separation from caves,
   // the boundary and other pockets. Guard the invariant if tuning moves them.
   for (const { x, y } of cells) {
-    if (!world.isSolid(x, y)
+    if (!world.isSolid(x, y) || world.material[world.index(x, y)] === 3
       || !world.isSolid(x - 1, y) || !world.isSolid(x + 1, y)
       || !world.isSolid(x, y - 1) || !world.isSolid(x, y + 1)) {
       throw new Error('Reservoir placement intersects an existing opening.');
@@ -161,7 +164,7 @@ function carveReservoir(world: World, cx: number, cy: number, mass: number,
   }
   for (const { x, y } of cells) {
     world.setMaterial(x, y, 0);
-    world.water[world.index(x, y)] = 1;
+    if (water) world.water[world.index(x, y)] = 1;
   }
 }
 

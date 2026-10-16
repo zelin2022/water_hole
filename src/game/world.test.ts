@@ -101,6 +101,27 @@ describe('World terrain', () => {
     expect(world.material[world.index(0, 3)]).not.toBe(0);
     expect(world.isSolid(0, 3)).toBe(true);
   });
+
+  it('keeps reinforced foundation solid and immutable through every terrain setter', () => {
+    const world = new World(8, 6);
+    world.setMaterial(2, 3, 3);
+    const cell = world.index(2, 3);
+    const version = world.terrainVersion;
+    for (const material of [0, 1, 2, 3] as const) world.setMaterial(2, 3, material);
+    world.setSolid(2, 3, false);
+    expect(world.material[cell]).toBe(3);
+    expect(world.isSolidAtPixel(9, 13)).toBe(true);
+    expect(world.damage[cell]).toBe(0);
+    expect(world.terrainVersion).toBe(version);
+  });
+
+  it('refuses to bury water when constructing a reinforced foundation', () => {
+    const world = new World(8, 6);
+    world.water[world.index(2, 3)] = 0.75;
+    expect(() => world.setMaterial(2, 3, 3)).toThrow(/water/i);
+    expect(world.isSolid(2, 3)).toBe(false);
+    expect(world.water[world.index(2, 3)]).toBe(0.75);
+  });
 });
 
 function filledWorld(): World {
@@ -114,6 +135,16 @@ function filledWorld(): World {
 }
 
 describe('dig', () => {
+  it('removes adjacent earth while preserving reinforced foundation and truthful removal counts', () => {
+    const world = new World(12, 12);
+    world.setMaterial(5, 4, 3);
+    world.setMaterial(4, 4, 1);
+    expect(dig(world, { x: 18, y: 18 }, { x: 22, y: 18 }, 5, 20)).toBe(1);
+    expect(world.material[world.index(5, 4)]).toBe(3);
+    expect(world.isSolid(4, 4)).toBe(false);
+    expect(dig(world, { x: 18, y: 18 }, { x: 22, y: 18 }, 5, 20)).toBe(0);
+  });
+
   it('removes a circular brush by cell centers and exposes collision immediately', () => {
     const world = filledWorld();
     const version = world.terrainVersion;
