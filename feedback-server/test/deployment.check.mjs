@@ -105,3 +105,32 @@ test('feedback journals have their own bounded disk budget without forwarding co
   bounded(journal.get('Journal', 'RuntimeMaxFileSize'), 2 * 1024 ** 2);
   for (const key of ['ForwardToSyslog', 'ForwardToKMsg', 'ForwardToConsole', 'ForwardToWall']) assert.equal(journal.get('Journal', key), 'no');
 });
+
+test('manual installer refuses replacement and keeps downloaded runtimes private and pinned', () => {
+  const source = readFileSync(new URL('install-host.sh', deployment), 'utf8');
+  assert.match(source, /\[\[ \$EUID -eq 0 \]\]/u);
+  assert.match(source, /refuse_existing \/opt\/waterhole-feedback/u);
+  assert.match(source, /refuse_existing \/etc\/waterhole-feedback/u);
+  assert.match(source, /NODE_VERSION=24\.22\.0/u);
+  assert.match(source, /cc2f601cee82d9a5a233302fe307abc600727035fd7d2c3a3571755989e95008/u);
+  assert.match(source, /CLOUDFLARED_VERSION=2026\.10\.1/u);
+  assert.match(source, /3bfc539f45d2620c71debb7a86be0efa737ed5ccbad9eb85c787116900e5c586/u);
+  assert.match(source, /sha256sum --check --status/u);
+  assert.match(source, /chmod -R a\+rX \/opt\/waterhole-feedback/u);
+  assert.doesNotMatch(source, /(?:apt(?:-get)?|yum|dnf|npm)\s+(?:install|update|upgrade)|(?:install|cp|mv)[^\n]*\/usr\/(?:local\/)?bin|\bcurl\b[^\n]*\|\s*(?:ba)?sh/u);
+});
+
+test('manual installer validates untrusted archive paths and stages disabled private configuration', () => {
+  const source = readFileSync(new URL('install-host.sh', deployment), 'utf8');
+  assert.match(source, /tarfile\.open/u);
+  assert.match(source, /member\.issym\(\).*member\.islnk\(\)/u);
+  assert.match(source, /"\.\." in parts/u);
+  assert.match(source, /parts\[0\] != "feedback-server"/u);
+  assert.match(source, /SUBMISSIONS_ENABLED=0/u);
+  assert.match(source, /install -m 0600.*receiver\.env/u);
+  assert.match(source, /install -m 0600.*tunnel-token/u);
+  assert.ok(source.indexOf('systemd-analyze verify') < source.indexOf('systemctl daemon-reload'));
+  assert.match(source, /127\.0\.0\.1:3210\/health/u);
+  assert.match(source, /127\.0\.0\.1:3211\/ready/u);
+  assert.doesNotMatch(source, /\b(?:iptables|nft|ufw|firewall-cmd|tailscale|docker|podman)\b|\bcloudflared\s+service\s+install/u);
+});

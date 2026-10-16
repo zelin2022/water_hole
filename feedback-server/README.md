@@ -67,6 +67,14 @@ The two unprivileged services have 128 MiB individual limits; the private logger
 
 Before installing, check units with `systemd-analyze verify` on the target Linux host and verify downloaded runtime checksums against official vendor metadata. Exercise representative screenshots and concurrent requests under the actual caps before enabling public submissions. Contract tests check deployment policies, not live Linux service behavior. These templates have not been installed on the AWS host.
 
+For a fresh host installation, `deploy/install-host.sh` accepts three paths: a source tar archive containing this repository's `feedback-server/`, a private receiver environment file, and a file containing only the tunnel token. Review the script, transfer these files into a private staging directory over verified SSH, and run it as root:
+
+```sh
+sudo bash install-host.sh source.tar receiver.env tunnel-token
+```
+
+The bootstrap pins and checks vendor runtime downloads, refuses an existing installation, installs the dedicated units, validates them, and starts with submissions disabled. It does not upgrade global packages, change public listeners, or alter the existing VPN/Docker/firewall configuration. Keep the staging directory private and remove its secret copies after installation. Installation is not complete until live service checks pass; enable submissions separately only after the real HTTPS and Turnstile path works.
+
 A rotating-IP attack can still exhaust the global budget, temporarily blocking legitimate feedback. Attempts already blocked by their IP limit do not consume the remaining global allowance. Every IP-eligible attempt counts before payload parsing or verification, including malformed reports. The budget protects the host; it cannot guarantee availability. Edge rate limiting plus Turnstile should be configured before public launch. The emergency switch closes submissions without deleting existing reports.
 
 ## Private inbox
