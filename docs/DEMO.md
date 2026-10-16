@@ -4,7 +4,7 @@ The demo develops the excavation and water-selling loop into a presentable Steam
 
 ## Agreed gameplay changes
 
-- Attach to walls only while falling, never during the upward part of a jump. Preserve unlimited climbing, air steering, detachment, wall jumping, and protection against immediate reattachment.
+- Attach to walls only while falling, never during the upward part of a jump. Require a continuous section of wall support so isolated terrain cells do not catch the character. Preserve unlimited climbing, air steering, detachment, wall jumping, and protection against immediate reattachment, including getting over the top of a wall.
 - Disable digging while attached to a wall initially. A purchased upgrade enables it.
 - Replace continuous excavation with discrete pickaxe strikes. Holding the dig input repeats swings; each impact applies terrain damage, with time between impacts.
 - Give terrain durability so harder material can require several strikes. Keep partial damage when leaving an area or saving.
@@ -43,6 +43,8 @@ Daylight is stronger near sky-exposed terrain. Determine this exposure from the 
 Use sky visibility and attenuated light spreading through connected open space as the initial model. Terrain blocks light, while headlamps and surrounding work light keep the immediate working area readable. Recompute affected lighting as excavation changes the terrain.
 
 Keep illumination and remembered exploration distinct. Both comparison variants should have soft, workable local visibility. The sonar-dependent variant hides remote remembered cave outlines until pinged, rather than making the current working area oppressively black. Lighting must not expose water through solid rock.
+
+Unlit environment is opaque darkness: cave space, rock, water, and their physical edges must not reveal the cave silhouette. Remembered mode adds only its faint explicit exploration outline; sonar mode adds an outline only while the ping passes. Light reveals and tints the actual environment, with pale white moon/sky light and warm yellow headlamp/torso light. Adding a light must never darken an already illuminated area. Narrow shafts attenuate sky light with depth; light updates when excavation changes sky exposure.
 
 ## Demo cutoff
 
@@ -88,6 +90,7 @@ These proposals remain available for discussion without being added to the initi
 - Follow [the art direction brief and generated reference](ART_DIRECTION.md): a weighty illustrated industrial cutaway, broad geological forms, subdued mineral colours, controlled teal water, a sturdy worker, and compact functional UI. Apply it to the character sprite, terrain, machine/hopper, other environmental assets, gameplay HUD, and purchase menu.
 - Maintain material separation and substantial cut edges after arbitrary excavation, including awkward player-dug tunnels. Make water the visual centrepiece through readable volume, surfaces, and flow.
 - Include visible pickaxe impacts, head rotation for the mouse-directed lamp, and visible equipment changes for major upgrades at gameplay scale.
+- Use a distinct attached silhouette with hands gripping the wall and braced legs. Before the wall-dig upgrade the attached model has no wielded pickaxe; afterward it keeps one hand gripping and wields the pickaxe with the other.
 - Add background music and SFX for core actions and feedback.
 - Provide New Game, Save, Load, Continue, pause, and settings. Settings include resolution/window size, windowed/fullscreen mode, audio, and keybindings.
 

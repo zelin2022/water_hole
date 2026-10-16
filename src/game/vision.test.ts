@@ -27,9 +27,36 @@ describe('daylight responding to excavated geometry', () => {
     expect(computeDaylight(world)[world.index(5, 9)]).toBe(0);
     for (let y = 4; y < 9; y++) world.setSolid(5, y, false);
     const light = computeDaylight(world);
-    expect(light[world.index(5, 9)]).toBe(1);
+    expect(light[world.index(5, 9)]).toBeGreaterThan(0);
+    expect(light[world.index(5, 9)]).toBeLessThan(light[world.index(5, 4)]);
     expect(light[world.index(6, 9)]).toBeGreaterThan(0);
     expect(light[world.index(6, 9)]).toBeLessThan(light[world.index(5, 9)]);
+  });
+
+  it('attenuates sky light down a narrow shaft instead of making its entire depth a light source', () => {
+    const world = new World(100, 100, 4);
+    for (let y = 10; y < 99; y++) {
+      for (let x = 1; x < 99; x++) world.setSolid(x, y, true);
+    }
+    for (let y = 10; y < 90; y++) world.setSolid(50, y, false);
+    const light = computeDaylight(world);
+    expect(light[world.index(50, 8)]).toBe(1);
+    expect(light[world.index(50, 35)]).toBeLessThan(0.5);
+    expect(light[world.index(50, 75)]).toBeLessThan(0.1);
+    expect(light[world.index(50, 75)]).toBeLessThan(light[world.index(50, 35)]);
+  });
+
+  it('moves the illuminated surface down when a broad excavation opens to the sky', () => {
+    const world = new World(100, 100, 4);
+    for (let y = 10; y < 99; y++) {
+      for (let x = 1; x < 99; x++) world.setSolid(x, y, true);
+    }
+    const index = world.index(50, 49);
+    expect(computeDaylight(world)[index]).toBe(0);
+    for (let y = 10; y <= 50; y++) {
+      for (let x = 15; x <= 85; x++) world.setSolid(x, y, false);
+    }
+    expect(computeDaylight(world)[index]).toBe(1);
   });
 
   it('does not treat freshly excavated underground faces as sunlight sources', () => {
@@ -59,6 +86,55 @@ describe('daylight responding to excavated geometry', () => {
 });
 
 describe('local lamps and exploration', () => {
+  it('keeps independent moon and warm-lamp fields, with lamps only increasing total brightness', () => {
+    const world = new World(40, 40, 4);
+    for (let y = 10; y < 39; y++) {
+      for (let x = 1; x < 39; x++) world.setSolid(x, y, true);
+    }
+    for (let y = 10; y < 35; y++) world.setSolid(20, y, false);
+    const state = createVision(world);
+    const input = {
+      position: { x: 82, y: 82 }, aim: { x: 82, y: 120 }, facing: 1 as const,
+      headlamp: 'mouse' as const, time: 0,
+    };
+    updateVision(world, state, { ...input, torsoRadius: 0, headlampRange: 0 });
+    const unlit = state.light.slice();
+    updateVision(world, state, input);
+    const index = world.index(20, 22);
+    expect(state.moonlight[index]).toBeGreaterThan(0);
+    expect(state.lamplight[index]).toBeGreaterThan(0);
+    expect(state.light[index]).toBeCloseTo(Math.min(1, state.moonlight[index] + state.lamplight[index]));
+    for (let cell = 0; cell < state.light.length; cell++) {
+      expect(state.light[cell]).toBeGreaterThanOrEqual(unlit[cell]);
+    }
+  });
+
+  it('retains a warm lamp contribution even where moonlight already has full brightness', () => {
+    const world = new World(40, 40, 4);
+    const state = createVision(world);
+    updateVision(world, state, {
+      position: { x: 50, y: 50 }, aim: { x: 100, y: 50 }, facing: 1,
+      headlamp: 'mouse', time: 0,
+    });
+    const index = world.index(15, 12);
+    expect(state.moonlight[index]).toBe(1);
+    expect(state.lamplight[index]).toBeGreaterThan(0);
+    expect(state.light[index]).toBe(1);
+  });
+
+  it('emits and aims the headlamp from the helmet instead of the torso', () => {
+    const world = undergroundRoom(30, 30);
+    for (let y = 9; y < 27; y++) world.setSolid(11, y, true);
+    const state = createVision(world);
+    updateVision(world, state, {
+      position: { x: 42, y: 42 }, headPosition: { x: 42, y: 34 },
+      aim: { x: 100, y: 34 }, facing: 1, headlamp: 'mouse', time: 0,
+      torsoRadius: 0, headlampRange: 80, headlampHalfAngle: 0.1,
+    });
+    expect(state.visible[world.index(16, 8)]).toBe(1);
+    expect(state.visible[world.index(16, 10)]).toBe(0);
+  });
+
   it('compares character-facing and mouse-facing beams independently of torso light', () => {
     const world = undergroundRoom();
     const state = createVision(world);
@@ -84,7 +160,10 @@ describe('local lamps and exploration', () => {
       headlamp: 'mouse', time: 0,
     });
     expect(state.visible[world.index(60, 25)]).toBe(1);
+    expect(state.lamplight[world.index(60, 25)]).toBeGreaterThan(0);
     expect(state.visible[world.index(62, 25)]).toBe(0);
+    expect(state.lamplight[world.index(62, 25)]).toBe(0);
+    expect(state.moonlight[world.index(62, 25)]).toBe(0);
     expect(state.explored[world.index(62, 25)]).toBe(0);
   });
 

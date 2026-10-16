@@ -8,6 +8,7 @@ export const TORSO_LIGHT_RADIUS = 55;
 export const HEADLAMP_RANGE = 180;
 export const HEADLAMP_HALF_ANGLE = Math.PI / 5;
 export const DAYLIGHT_FALLOFF_DISTANCE = 64;
+export const DAYLIGHT_SURFACE_SAMPLE_RADIUS = 96;
 export const MINIMUM_VISIBLE_LIGHT = 0.025;
 
 const daylightCache = new WeakMap<World, { version: number; field: Float32Array }>();
@@ -17,6 +18,8 @@ export interface VisionState {
   explored: Uint8Array;
   visible: Uint8Array;
   light: Float32Array;
+  moonlight: Float32Array;
+  lamplight: Float32Array;
   daylight: Float32Array;
   sonar: SonarPulse | null;
   lastSonarAt: number;
@@ -24,6 +27,7 @@ export interface VisionState {
 
 export interface VisionInput {
   position: Point;
+  headPosition?: Point;
   aim: Point;
   facing: -1 | 1;
   headlamp: 'character' | 'mouse';
@@ -40,6 +44,7 @@ export function createVision(world: World, explored?: Uint8Array): VisionState {
   return {
     explored: explored ?? new Uint8Array(size), visible: new Uint8Array(size),
     light: new Float32Array(size), daylight: new Float32Array(size),
+    moonlight: new Float32Array(size), lamplight: new Float32Array(size),
     sonar: null, lastSonarAt: -SONAR_COOLDOWN,
   };
 }
@@ -49,21 +54,50 @@ export function computeDaylight(world: World): Float32Array {
   if (cached?.version === world.terrainVersion) return cached.field;
   const light = new Float32Array(world.width * world.height);
   const queue = new Uint32Array(light.length);
+  const queued = new Uint8Array(light.length);
   let head = 0;
   let tail = 0;
+  let pending = 0;
+
+  // Current sky-facing terrain defines the surface. A local skyline average
+  // keeps narrow shafts below that surface, while broad excavation lowers it.
+  const skyline = new Uint32Array(world.width);
+  const surfaceSums = new Float64Array(world.width + 1);
+  for (let x = 1; x < world.width - 1; x++) {
+    let y = 1;
+    while (y < world.height - 1 && !world.isSolid(x, y)) y++;
+    skyline[x] = y;
+    surfaceSums[x + 1] = surfaceSums[x] + y;
+  }
+  const sampleRadius = Math.ceil(DAYLIGHT_SURFACE_SAMPLE_RADIUS / world.cellSize);
+  const enqueue = (index: number): void => {
+    if (queued[index]) return;
+    queue[tail] = index;
+    tail = (tail + 1) % queue.length;
+    queued[index] = 1;
+    pending++;
+  };
 
   // The outer grid ring is sealed for collision. Interior row one represents
-  // the sky. Only uninterrupted sky columns supply light; new cave faces do not.
+  // the sky. Direct sky exposure still attenuates below the nearby surface;
+  // freshly uncovered underground faces never become independent light sources.
   for (let x = 1; x < world.width - 1; x++) {
-    for (let y = 1; y < world.height - 1 && !world.isSolid(x, y); y++) {
+    const left = Math.max(1, x - sampleRadius);
+    const right = Math.min(world.width - 2, x + sampleRadius);
+    const surface = (surfaceSums[right + 1] - surfaceSums[left]) / (right - left + 1);
+    for (let y = 1; y < skyline[x]; y++) {
       const index = world.index(x, y);
-      light[index] = 1;
-      queue[tail++] = index;
+      const depth = Math.max(0, (y + 0.5 - surface) * world.cellSize);
+      light[index] = Math.exp(-depth / DAYLIGHT_FALLOFF_DISTANCE);
+      enqueue(index);
     }
   }
   const attenuation = Math.exp(-world.cellSize / DAYLIGHT_FALLOFF_DISTANCE);
-  while (head < tail) {
-    const index = queue[head++];
+  while (pending > 0) {
+    const index = queue[head];
+    head = (head + 1) % queue.length;
+    queued[index] = 0;
+    pending--;
     const strength = light[index] * attenuation;
     if (strength < MINIMUM_VISIBLE_LIGHT) continue;
     const x = index % world.width;
@@ -73,9 +107,10 @@ export function computeDaylight(world: World): Float32Array {
       const nx = neighbour % world.width;
       const ny = Math.floor(neighbour / world.width);
       if (Math.abs(nx - x) + Math.abs(ny - y) !== 1
-        || !world.inBounds(nx, ny) || world.solid[neighbour] || light[neighbour]) continue;
+        || !world.inBounds(nx, ny) || world.solid[neighbour]
+        || strength <= light[neighbour] + 1e-6) continue;
       light[neighbour] = strength;
-      queue[tail++] = neighbour;
+      enqueue(neighbour);
     }
   }
 
@@ -136,16 +171,17 @@ function hasLineOfSight(world: World, origin: Point, targetX: number, targetY: n
 
 export function updateVision(world: World, state: VisionState, input: VisionInput): void {
   state.daylight = computeDaylight(world);
-  state.light.set(state.daylight);
+  state.moonlight.set(state.daylight);
+  state.lamplight.fill(0);
   const torsoRadius = input.torsoRadius ?? TORSO_LIGHT_RADIUS;
   const beamRange = input.headlampRange ?? HEADLAMP_RANGE;
   const halfAngle = input.headlampHalfAngle ?? HEADLAMP_HALF_ANGLE;
-  const radius = Math.max(torsoRadius, beamRange);
+  const headPosition = input.headPosition ?? input.position;
   let directionX = input.facing;
   let directionY = 0;
   if (input.headlamp === 'mouse') {
-    const dx = input.aim.x - input.position.x;
-    const dy = input.aim.y - input.position.y;
+    const dx = input.aim.x - headPosition.x;
+    const dy = input.aim.y - headPosition.y;
     const length = Math.hypot(dx, dy);
     if (length > 0) {
       directionX = dx / length;
@@ -153,33 +189,39 @@ export function updateVision(world: World, state: VisionState, input: VisionInpu
     }
   }
   const coneLimit = Math.cos(halfAngle);
-  const minX = Math.max(1, Math.floor((input.position.x - radius) / world.cellSize));
-  const maxX = Math.min(world.width - 2, Math.floor((input.position.x + radius) / world.cellSize));
-  const minY = Math.max(1, Math.floor((input.position.y - radius) / world.cellSize));
-  const maxY = Math.min(world.height - 2, Math.floor((input.position.y + radius) / world.cellSize));
+  const minX = Math.max(1, Math.floor(Math.min(input.position.x - torsoRadius, headPosition.x - beamRange) / world.cellSize));
+  const maxX = Math.min(world.width - 2, Math.floor(Math.max(input.position.x + torsoRadius, headPosition.x + beamRange) / world.cellSize));
+  const minY = Math.max(1, Math.floor(Math.min(input.position.y - torsoRadius, headPosition.y - beamRange) / world.cellSize));
+  const maxY = Math.min(world.height - 2, Math.floor(Math.max(input.position.y + torsoRadius, headPosition.y + beamRange) / world.cellSize));
   for (let y = minY; y <= maxY; y++) {
     for (let x = minX; x <= maxX; x++) {
-      const dx = (x + 0.5) * world.cellSize - input.position.x;
-      const dy = (y + 0.5) * world.cellSize - input.position.y;
+      const cellX = (x + 0.5) * world.cellSize;
+      const cellY = (y + 0.5) * world.cellSize;
+      const torsoDistance = Math.hypot(cellX - input.position.x, cellY - input.position.y);
+      let strength = torsoDistance < torsoRadius && hasLineOfSight(world, input.position, x, y)
+        ? 0.8 * Math.pow(1 - torsoDistance / torsoRadius, 0.6) : 0;
+      const dx = cellX - headPosition.x;
+      const dy = cellY - headPosition.y;
       const distance = Math.hypot(dx, dy);
-      let strength = distance < torsoRadius ? 0.8 * Math.pow(1 - distance / torsoRadius, 0.6) : 0;
       const alignment = distance > 0 ? (dx * directionX + dy * directionY) / distance : 1;
-      if (distance < beamRange && alignment > coneLimit) {
+      if (distance < beamRange && alignment > coneLimit && hasLineOfSight(world, headPosition, x, y)) {
         const edgeFade = Math.sqrt((alignment - coneLimit) / (1 - coneLimit));
         strength = Math.max(strength, Math.pow(1 - distance / beamRange, 0.55) * edgeFade);
       }
       const index = world.index(x, y);
-      if (strength <= state.light[index] || !hasLineOfSight(world, input.position, x, y)) continue;
-      state.light[index] = strength;
+      state.lamplight[index] = strength;
     }
   }
   for (let index = 0; index < state.visible.length; index++) {
+    state.light[index] = Math.min(1, state.moonlight[index] + state.lamplight[index]);
     state.visible[index] = state.light[index] >= MINIMUM_VISIBLE_LIGHT ? 1 : 0;
     if (state.visible[index]) state.explored[index] = 1;
   }
   if (input.debugVision) {
     state.visible.fill(1);
     state.light.fill(1);
+    state.moonlight.fill(1);
+    state.lamplight.fill(0);
   }
 }
 

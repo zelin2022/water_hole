@@ -28,6 +28,8 @@ New Game offers independent comparisons for dim remembered cave outlines versus 
 
 The underground starter shaft is beside the exchange. Airborne wall contact attaches only while falling. Hold S to descend after attaching, then work from the shaft floor to reach the first reservoir. Digging while attached is disabled until the work-harness upgrade is purchased.
 
+Clinging needs continuous wall support; single-cell obstacles do not trigger it. The attached pose grips the wall with both hands before the harness upgrade, then visibly wields the pickaxe after installation. Underground darkness conceals the environment. Pale moonlight enters exposed openings and weakens in narrow shafts; warm head/torso lights reveal the nearby surroundings. Remembered mode keeps a faint explored outline, while sonar mode needs light or a ping to reveal it.
+
 ## Default controls
 
 | Input | Action |

@@ -4,6 +4,7 @@ import { upgradeStats } from './game/economy';
 import { findNearestWater } from './game/detector';
 import { SONAR_TRAVEL_TIME, sonarOpacity, type VisionState } from './game/vision';
 import type { Point, World } from './game/world';
+import { caveOutlineOpacity, DARKNESS, lightTransmission } from './render-lighting';
 
 const ZOOM = 1.8;
 const clamp = (v: number, min: number, max: number): number => Math.max(min, Math.min(max, v));
@@ -16,10 +17,10 @@ const hash = (x: number, y: number): number => {
 export class Renderer {
   private readonly context: CanvasRenderingContext2D;
   private readonly terrain = document.createElement('canvas');
-  private readonly coveredTerrain = document.createElement('canvas');
   private readonly materialLayer = document.createElement('canvas');
   private readonly waterLayer = document.createElement('canvas');
   private readonly lightMask = document.createElement('canvas');
+  private readonly lightChannels: [number, number, number] = [0, 0, 0];
   private lightPixels: ImageData | undefined;
   private cachedWorld: World | undefined;
   private cachedVersion = -1;
@@ -66,30 +67,16 @@ export class Renderer {
     ctx.imageSmoothingEnabled = true;
     this.drawBackground(world.width * world.cellSize, world.height * world.cellSize, session.surfaceY);
     if (this.cachedWorld !== world || this.cachedVersion !== world.terrainVersion) this.cacheTerrain(world);
-    ctx.drawImage(this.coveredTerrain, 0, 0);
-    // Unknown cavities carry the same geological cover as surrounding terrain.
-    // Only current sight cuts through that cover; resources never leak through it.
-    const reveal = new Path2D();
-    const { minX, maxX, minY, maxY } = this.bounds(world);
-    const s = world.cellSize;
-    for (let y = minY; y <= maxY; y++) {
-      let start = -1;
-      for (let x = minX; x <= maxX + 1; x++) {
-        const visible = x <= maxX && vision.visible[world.index(x, y)];
-        if (visible && start < 0) start = x;
-        if (!visible && start >= 0) { reveal.rect(start * s, y * s, (x - start) * s, s); start = -1; }
-      }
-    }
-    ctx.save(); ctx.clip(reveal);
-    this.drawBackground(world.width * s, world.height * s, session.surfaceY);
     ctx.drawImage(this.terrain, 0, 0);
-    ctx.restore();
-    this.drawWater(session, vision);
+    this.drawWater(session);
+    this.drawMachine(session);
+    this.drawActions(session, aim, collecting, vision);
+    // All environmental geometry, including cut bevels, water and machinery,
+    // receives the same source lighting. No geological cover remains visible
+    // in darkness and no post-lighting machine can show through an unlit cave.
     this.drawLighting(session, vision);
     this.drawCaveOutlines(session, vision);
-    this.drawMachine(session);
     this.drawWorker(session, aim);
-    this.drawActions(session, aim, collecting, vision);
   }
 
   private resize(): void {
@@ -113,8 +100,9 @@ export class Renderer {
   private drawBackground(width: number, height: number, ground: number): void {
     const ctx = this.context;
     const sky = ctx.createLinearGradient(0, 0, 0, ground);
-    sky.addColorStop(0, '#76919a'); sky.addColorStop(0.6, '#a6b4ae'); sky.addColorStop(1, '#d5c7a6');
+    sky.addColorStop(0, '#455d6b'); sky.addColorStop(0.6, '#70858b'); sky.addColorStop(1, '#a5aaa0');
     ctx.fillStyle = sky; ctx.fillRect(0, 0, width, ground + 28);
+    ctx.fillStyle = '#dce6ef'; ctx.beginPath(); ctx.arc(410, Math.max(24, ground - 87), 11, 0, Math.PI * 2); ctx.fill();
     for (let layer = 0; layer < 2; layer++) {
       ctx.fillStyle = layer ? '#8b8d7e' : '#b3ac92';
       ctx.beginPath(); ctx.moveTo(0, ground + 12);
@@ -135,24 +123,11 @@ export class Renderer {
 
   private cacheTerrain(world: World): void {
     const s = world.cellSize;
-    this.terrain.width = this.coveredTerrain.width = this.materialLayer.width = world.width * s;
-    this.terrain.height = this.coveredTerrain.height = this.materialLayer.height = world.height * s;
+    this.terrain.width = this.materialLayer.width = world.width * s;
+    this.terrain.height = this.materialLayer.height = world.height * s;
     const terrainContext = this.terrain.getContext('2d')!;
-    const covered = new Uint8Array(world.material);
-    // Carry geological layers across missing cells, without putting cave-shaped
-    // bevels, silhouettes, or resource colours in the undiscovered cover.
-    for (let x = 1; x < world.width - 1; x++) {
-      let material = 0;
-      for (let y = 1; y < world.height - 1; y++) {
-        const index = world.index(x, y);
-        if (world.material[index]) material = world.material[index];
-        else if (material) covered[index] = material;
-      }
-    }
     const layer = this.materialLayer.getContext('2d')!;
-    for (const cover of [false, true]) {
-    const ctx = cover ? this.coveredTerrain.getContext('2d')! : terrainContext;
-    const materials = cover ? covered : world.material;
+    const materials = world.material;
     for (const material of [1, 2]) {
       layer.globalCompositeOperation = 'source-over'; layer.clearRect(0, 0, this.materialLayer.width, this.materialLayer.height);
       layer.fillStyle = material === 1 ? '#806852' : '#596063';
@@ -184,8 +159,7 @@ export class Renderer {
           }
         }
       }
-      layer.globalAlpha = 1; layer.globalCompositeOperation = 'source-over'; ctx.drawImage(this.materialLayer, 0, 0);
-    }
+      layer.globalAlpha = 1; layer.globalCompositeOperation = 'source-over'; terrainContext.drawImage(this.materialLayer, 0, 0);
     }
     const ctx = terrainContext;
     // Bevel every exposed cut, including arbitrary excavation, on its solid side.
@@ -210,7 +184,7 @@ export class Renderer {
     this.cachedWorld = world; this.cachedVersion = world.terrainVersion;
   }
 
-  private drawWater(session: Session, vision: VisionState): void {
+  private drawWater(session: Session): void {
     const { world } = session; const s = world.cellSize;
     if (this.waterLayer.width !== world.width * s || this.waterLayer.height !== world.height * s) {
       this.waterLayer.width = world.width * s; this.waterLayer.height = world.height * s;
@@ -231,7 +205,7 @@ export class Renderer {
       };
       for (let x = minX; x <= maxX + 1; x++) {
         const i = world.index(x, y);
-        const amount = x <= maxX && vision.visible[i] ? clamp(world.water[i], 0, 1) : 0;
+        const amount = x <= maxX ? clamp(world.water[i], 0, 1) : 0;
         if (amount > 0.98) { if (start < 0) start = x; }
         else { flush(x); if (amount > 0.006) { ctx.fillStyle = '#368c94'; ctx.fillRect(x * s, (y + 1 - amount) * s, s, amount * s); } }
       }
@@ -241,7 +215,7 @@ export class Renderer {
       ctx.beginPath();
       for (let x = minX; x <= maxX; x++) {
         const i = world.index(x, y); const amount = world.water[i];
-        if (!vision.visible[i] || amount < 0.08 || (y > 0 && world.water[i - world.width] > 0.08)) continue;
+        if (amount < 0.08 || (y > 0 && world.water[i - world.width] > 0.08)) continue;
         const py = (y + 1 - amount) * s + Math.sin(x * 0.28 + session.time * 1.6) * 0.22;
         ctx.moveTo(x * s, py); ctx.lineTo((x + 1) * s, py);
       }
@@ -258,17 +232,21 @@ export class Renderer {
     }
     const pixels = this.lightPixels!.data;
     for (let index = 0; index < world.solid.length; index++) {
-      const light = clamp(vision.light[index], 0, 1);
-      const open = !world.solid[index] && vision.visible[index];
-      const displayLight = open ? light : 0.42 + light * 0.58;
+      const transmission = lightTransmission(vision.moonlight[index], vision.lamplight[index], this.lightChannels);
       const offset = index * 4;
-      pixels[offset] = 12; pixels[offset + 1] = 20; pixels[offset + 2] = 24;
-      pixels[offset + 3] = Math.round((1 - displayLight) * 250);
+      pixels[offset] = Math.round(transmission[0] * 255);
+      pixels[offset + 1] = Math.round(transmission[1] * 255);
+      pixels[offset + 2] = Math.round(transmission[2] * 255);
+      pixels[offset + 3] = 255;
     }
     this.lightMask.getContext('2d')!.putImageData(this.lightPixels!, 0, 0);
-    ctx.imageSmoothingEnabled = false;
+    ctx.save(); ctx.imageSmoothingEnabled = true;
+    ctx.globalCompositeOperation = 'multiply';
     ctx.drawImage(this.lightMask, 0, 0, world.width * world.cellSize, world.height * world.cellSize);
-    ctx.imageSmoothingEnabled = true;
+    ctx.globalCompositeOperation = 'screen';
+    ctx.fillStyle = `rgb(${DARKNESS.join(',')})`;
+    ctx.fillRect(this.cameraX, this.cameraY, this.width / ZOOM, this.height / ZOOM);
+    ctx.restore();
   }
 
   private drawCaveOutlines(session: Session, vision: VisionState): void {
@@ -284,15 +262,16 @@ export class Renderer {
           const neighbor = world.index(x + dx, y + dy);
           const point = { x: (x + (ax + bx) / 2) * s, y: (y + (ay + by) / 2) * s };
           const sonar = sonarOpacity(vision, point, session.time);
-          const remembered = session.options.caveMemory === 'remembered' && (vision.explored[i] || vision.explored[neighbor]);
-          const bucket = sonar > 0 ? Math.max(1, Math.ceil(sonar * 8)) : remembered ? 0 : -1;
+          const remembered = session.options.caveMemory === 'remembered' && Boolean(vision.explored[i] || vision.explored[neighbor]);
+          const opacity = caveOutlineOpacity(remembered, sonar);
+          const bucket = sonar > 0 ? Math.max(1, Math.ceil(opacity / 0.75 * 8)) : opacity > 0 ? 0 : -1;
           if (bucket < 0) continue;
           paths[bucket].moveTo((x + ax) * s, (y + ay) * s); paths[bucket].lineTo((x + bx) * s, (y + by) * s);
         }
       }
     }
     for (let i = 0; i < paths.length; i++) {
-      ctx.strokeStyle = i === 0 ? '#687d7e4d' : `rgba(130,188,184,${i / 8 * 0.75})`;
+      ctx.strokeStyle = i === 0 ? `rgba(104,125,126,${caveOutlineOpacity(true, 0)})` : `rgba(130,188,184,${i / 8 * 0.75})`;
       ctx.lineWidth = i === 0 ? 0.7 : 1; ctx.stroke(paths[i]);
     }
     if (vision.sonar) {
@@ -340,13 +319,22 @@ export class Renderer {
     const facing = p.wall || session.facing;
     const stride = Math.sin(session.time * (p.wall ? 8 : 12)) * (p.wall ? Math.min(2.4, Math.abs(p.vy) / 30) : p.grounded ? Math.min(2.4, Math.abs(p.vx) / 60) : 0.7);
     ctx.save(); ctx.translate(cx, y); ctx.scale(facing, 1); ctx.lineCap = 'round';
-    for (const side of [-1, 1]) {
-      ctx.strokeStyle = '#303d40'; ctx.lineWidth = 4.6; ctx.beginPath(); ctx.moveTo(side * 3, 22);
-      ctx.lineTo(side * 3 + stride * side, p.wall ? 25 - stride * side : 27);
-      ctx.lineTo(side * 3 - stride * side, p.wall ? 29 - stride * side : 30); ctx.stroke();
-      ctx.strokeStyle = '#252f32'; ctx.lineWidth = 4; ctx.beginPath();
-      ctx.moveTo(side * 3 - stride * side - 1, p.wall ? 30 - stride * side : 31);
-      ctx.lineTo(side * 3 - stride * side + 2, p.wall ? 30 - stride * side : 31); ctx.stroke();
+    if (p.wall) {
+      // Bent knees and planted toes give attachment a different silhouette,
+      // rather than looking like a standing worker frozen against a wall.
+      ctx.strokeStyle = '#303d40'; ctx.lineWidth = 4.6;
+      ctx.beginPath(); ctx.moveTo(1, 22); ctx.lineTo(-1, 25 - stride); ctx.lineTo(7, 21 - stride); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-4, 22); ctx.lineTo(-6, 28 + stride); ctx.lineTo(7, 30 + stride); ctx.stroke();
+      ctx.strokeStyle = '#202d30'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(7, 19 - stride); ctx.lineTo(7, 23 - stride);
+      ctx.moveTo(7, 28 + stride); ctx.lineTo(7, 32 + stride); ctx.stroke();
+    } else {
+      for (const side of [-1, 1]) {
+        ctx.strokeStyle = '#303d40'; ctx.lineWidth = 4.6; ctx.beginPath(); ctx.moveTo(side * 3, 22);
+        ctx.lineTo(side * 3 + stride * side, 27); ctx.lineTo(side * 3 - stride * side, 30); ctx.stroke();
+        ctx.strokeStyle = '#252f32'; ctx.lineWidth = 4; ctx.beginPath();
+        ctx.moveTo(side * 3 - stride * side - 1, 31); ctx.lineTo(side * 3 - stride * side + 2, 31); ctx.stroke();
+      }
     }
     const th = 12 + session.tank.upgrades.capacity * 3; const tw = 6 + session.tank.upgrades.capacity * 1.2;
     ctx.fillStyle = '#89958c'; ctx.beginPath(); ctx.roundRect(-10 - tw / 2, 23 - th, tw, th, 2); ctx.fill();
@@ -361,7 +349,14 @@ export class Renderer {
       ctx.moveTo(4, 11); ctx.lineTo(-4, 22); ctx.stroke();
     }
     if (p.wall) {
-      ctx.strokeStyle = '#c28a51'; ctx.lineWidth = 3.3; ctx.beginPath(); ctx.moveTo(1, 13); ctx.lineTo(7, 10 + stride); ctx.lineTo(9, 5 + stride); ctx.stroke();
+      ctx.strokeStyle = '#c28a51'; ctx.lineWidth = 3.3; ctx.beginPath(); ctx.moveTo(-1, 13); ctx.lineTo(3, 8 + stride); ctx.lineTo(8, 5 + stride); ctx.stroke();
+      ctx.fillStyle = '#343f3d'; ctx.beginPath(); ctx.roundRect(6.6, 3.5 + stride, 2.5, 4, 1); ctx.fill();
+      if (!session.tank.upgrades.wallDig) {
+        // Without the harness both hands are occupied; no pickaxe or swing arm.
+        ctx.strokeStyle = '#dfaa6e'; ctx.lineWidth = 3.3;
+        ctx.beginPath(); ctx.moveTo(2, 16); ctx.lineTo(4, 20 - stride); ctx.lineTo(8, 15 - stride); ctx.stroke();
+        ctx.fillStyle = '#343f3d'; ctx.beginPath(); ctx.roundRect(6.6, 13.5 - stride, 2.5, 4, 1); ctx.fill();
+      }
     }
     ctx.restore();
     // Mirror independently, then tilt: facing left does not turn the helmet upside down.
@@ -375,6 +370,7 @@ export class Renderer {
     ctx.fillStyle = '#8caaa6'; ctx.fillRect(2, -0.5, 2.5, 1.3);
     ctx.fillStyle = '#3b4747'; ctx.fillRect(4.8, -3.4, 2.5, 3); ctx.fillStyle = '#f1e4b8'; ctx.fillRect(6.2, -2.9, 1.4, 2);
     ctx.restore();
+    if (p.wall && !session.tank.upgrades.wallDig) return;
     const origin = playerCenter(session); const base = Math.atan2(aim.y - origin.y, aim.x - origin.x);
     const windup = session.strikeTime >= 0 ? clamp(session.strikeTime / DIG_WINDUP, 0, 1) : 0;
     const age = session.lastStrike ? session.time - session.lastStrike.time : 1;
@@ -394,8 +390,10 @@ export class Renderer {
   private drawActions(session: Session, aim: Point, collecting: boolean, vision: VisionState): void {
     const ctx = this.context; const origin = playerCenter(session); const stats = upgradeStats(session.tank);
     const center = strikeCenter(origin, aim, stats.digRadius, session.facing);
-    ctx.strokeStyle = !session.player.wall || session.tank.upgrades.wallDig ? '#d6bc864d' : '#bb795c70'; ctx.lineWidth = 0.75;
-    for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.arc(center.x, center.y, stats.digRadius, i * Math.PI / 2 - 0.12, i * Math.PI / 2 + 0.12); ctx.stroke(); }
+    if (!session.player.wall || session.tank.upgrades.wallDig) {
+      ctx.strokeStyle = '#d6bc864d'; ctx.lineWidth = 0.75;
+      for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.arc(center.x, center.y, stats.digRadius, i * Math.PI / 2 - 0.12, i * Math.PI / 2 + 0.12); ctx.stroke(); }
+    }
     if (session.lastStrike?.damaged) {
       const age = session.time - session.lastStrike.time;
       if (age >= 0 && age < 0.28) {

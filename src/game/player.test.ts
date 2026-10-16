@@ -114,6 +114,81 @@ describe('player movement', () => {
     expect(player.vy).toBe(0);
   });
 
+  it.each([-1, 1] as const)('collides with a one-cell obstacle on side %s without attaching', side => {
+    const world = room();
+    world.setSolid(30, 28, true);
+    const player = createPlayer(side < 0 ? 126 : 102, 100);
+    tick(world, player, side < 0 ? { left: true } : { right: true }, 2);
+    expect(player.wall).toBe(0);
+    expect(player.vy).toBeGreaterThan(0);
+    if (side < 0) expect(player.x).toBeCloseTo(124, 5);
+    else expect(player.x + player.width).toBeCloseTo(120, 5);
+  });
+
+  it.each([-1, 1] as const)('does not attach to a two-cell remnant on side %s', side => {
+    const world = room();
+    world.setSolid(30, 28, true);
+    world.setSolid(30, 29, true);
+    const player = createPlayer(side < 0 ? 124 : 104, 100);
+    tick(world, player);
+    expect(player.wall).toBe(0);
+    expect(player.vy).toBeGreaterThan(0);
+  });
+
+  it('does not combine separated spikes into a supporting wall', () => {
+    const world = room();
+    for (const y of [26, 28, 30, 32]) world.setSolid(30, y, true);
+    const player = createPlayer(104, 100);
+    tick(world, player);
+    expect(player.wall).toBe(0);
+    expect(player.vy).toBeGreaterThan(0);
+  });
+
+  it('requires enough supporting wall to overlap the body, not just exist nearby', () => {
+    const world = room();
+    for (let y = 31; y <= 34; y++) world.setSolid(30, y, true);
+    const player = createPlayer(104, 100);
+    tick(world, player);
+    expect(player.wall).toBe(0);
+    expect(player.vy).toBeGreaterThan(0);
+  });
+
+  it('attaches to a contiguous three-cell surface and can climb along it', () => {
+    const world = room();
+    for (let y = 28; y <= 30; y++) world.setSolid(30, y, true);
+    const player = createPlayer(104, 100);
+    tick(world, player);
+    expect(player.wall).toBe(1);
+    const attachedY = player.y;
+    tick(world, player, { up: true }, 2);
+    expect(player.wall).toBe(1);
+    expect(player.y).toBeLessThan(attachedY);
+  });
+
+  it('falls when the supporting wall is reduced to a tiny remnant', () => {
+    const { world, player } = rightAttached();
+    const attachedY = player.y;
+    for (let y = 1; y < 50; y++) world.setSolid(30, y, y === 28 || y === 29);
+    tick(world, player, {}, 2);
+    expect(player.wall).toBe(0);
+    expect(player.y).toBeGreaterThan(attachedY);
+  });
+
+  it('finishes climbing over a wall lip after side support becomes shorter than the grip minimum', () => {
+    const world = room();
+    for (let y = 25; y < 50; y++) {
+      for (let x = 30; x < 79; x++) world.setSolid(x, y, true);
+    }
+    const player = createPlayer(104, 120);
+    tick(world, player);
+    expect(player.wall).toBe(1);
+    tick(world, player, { up: true, right: true }, 120);
+    expect(player.wall).toBe(0);
+    expect(player.grounded).toBe(true);
+    expect(player.y + player.height).toBeCloseTo(100, 5);
+    expect(player.x).toBeGreaterThan(120);
+  });
+
   it('does not attach during a rising jump beside a wall, then attaches when falling', () => {
     const world = room();
     wall(world, 30);

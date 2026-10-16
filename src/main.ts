@@ -267,7 +267,7 @@ function tick(time: number): void {
     if (session.completed) { audio.play('end'); saveRun(false); changeScreen('ended'); }
   }
   if (session.time - lastVisionAt > 0.075 || lastTerrainVersion !== session.world.terrainVersion || lastVisionAt < 0) {
-    updateVision(session.world, vision, { position: playerCenter(session), aim, facing: session.facing, headlamp: session.options.headlamp, time: session.time, debugVision: session.options.debugVision });
+    updateVision(session.world, vision, { position: playerCenter(session), headPosition: { x: session.player.x + session.player.width / 2, y: session.player.y + 6 }, aim, facing: session.facing, headlamp: session.options.headlamp, time: session.time, debugVision: session.options.debugVision });
     lastVisionAt = session.time; lastTerrainVersion = session.world.terrainVersion;
   }
   renderer.render(session, aim, screen === 'playing' && down('collect'), vision);

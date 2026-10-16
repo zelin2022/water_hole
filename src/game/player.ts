@@ -31,6 +31,8 @@ const CLIMB_SPEED = 65;
 const GRAVITY = 900;
 const JUMP_SPEED = 275;
 const MAX_FALL_SPEED = 420;
+// Small leftover cells collide normally, but cannot hold the character in a climbing state.
+export const MIN_WALL_CONTACT = 12;
 
 /** Small collision steps keep even a delayed frame from skipping thin terrain. */
 export function stepPlayer(world: World, player: Player, input: PlayerInput, dt: number, options: { climbSpeed?: number } = {}): void {
@@ -49,7 +51,7 @@ function updatePlayer(world: World, player: Player, input: PlayerInput, dt: numb
   if (player.suppressedWall && !touchesWall(world, player, player.suppressedWall)) {
     player.suppressedWall = 0;
   }
-  if (player.wall && (!touchesWall(world, player, player.wall) || player.grounded)) {
+  if (player.wall && (!hasClimbingSupport(world, player, player.wall) || player.grounded)) {
     player.wall = 0;
     player.vy = 0;
   }
@@ -73,7 +75,12 @@ function updatePlayer(world: World, player: Player, input: PlayerInput, dt: numb
     player.vx = 0;
     player.vy = (Number(input.down) - Number(input.up)) * climbSpeed;
     moveVertical(world, player, player.vy * dt);
-    if (player.grounded || !touchesWall(world, player, player.wall)) {
+    if (player.grounded || !hasClimbingSupport(world, player, player.wall)) {
+      // Finish the last few pixels of an upward climb over a lip. This remains
+      // normal airborne motion with collision checks, rather than snapping onto terrain.
+      if (!player.grounded && player.vy < 0) {
+        player.vy = -Math.sqrt(2 * GRAVITY * (MIN_WALL_CONTACT + world.cellSize));
+      }
       player.wall = 0;
     }
     return;
@@ -86,7 +93,9 @@ function updatePlayer(world: World, player: Player, input: PlayerInput, dt: numb
   moveVertical(world, player, player.vy * dt);
   const hitWall = moveHorizontal(world, player, player.vx * dt);
   player.grounded = player.vy >= 0 && touchesFloor(world, player);
-  const contact = hitWall || (touchesWall(world, player, -1) ? -1 : touchesWall(world, player, 1) ? 1 : 0);
+  const contact = hitWall && hasClimbingSupport(world, player, hitWall)
+    ? hitWall
+    : hasClimbingSupport(world, player, -1) ? -1 : hasClimbingSupport(world, player, 1) ? 1 : 0;
   if (contact && player.vy > 0 && !player.grounded && contact !== player.suppressedWall) {
     player.wall = contact;
     player.vy = 0;
@@ -112,6 +121,23 @@ function touchesWall(world: World, player: Player, side: -1 | 1): boolean {
   const maxY = Math.floor((player.y + player.height - EPSILON) / size);
   for (let y = minY; y <= maxY; y++) {
     if (world.isSolid(cellX, y)) return true;
+  }
+  return false;
+}
+
+function hasClimbingSupport(world: World, player: Player, side: -1 | 1): boolean {
+  const size = world.cellSize;
+  const cellX = Math.floor((side < 0 ? player.x - EPSILON : player.x + player.width + EPSILON) / size);
+  const minY = Math.floor((player.y + EPSILON) / size);
+  const maxY = Math.floor((player.y + player.height - EPSILON) / size);
+  let contiguousContact = 0;
+  for (let y = minY; y <= maxY; y++) {
+    if (!world.isSolid(cellX, y)) {
+      contiguousContact = 0;
+      continue;
+    }
+    contiguousContact += Math.min(player.y + player.height, (y + 1) * size) - Math.max(player.y, y * size);
+    if (contiguousContact >= MIN_WALL_CONTACT - EPSILON) return true;
   }
   return false;
 }
