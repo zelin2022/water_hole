@@ -4,6 +4,7 @@ import { World } from './game/world';
 import type { Session } from './game/session';
 import { createPlayer } from './game/player';
 import { createTank } from './game/economy';
+import { createVision } from './game/vision';
 
 describe('tank equipment rendering', () => {
   it('grows through all ten sizes without extending above the worker or changing carried water', () => {
@@ -30,6 +31,52 @@ describe('tank equipment rendering', () => {
       expect(tank.water).toBe(tank.capacity);
       previousHeight = height;
     }
+  });
+});
+
+describe('terrain halo lighting', () => {
+  it.each([
+    { scale: 1, x: 0, y: 0, waterRect: [52, 52, 4, 4], rockRect: [48, 52, 4, 4], litRect: [52, 56, 4, 4], farRect: [80, 52, 4, 4] },
+    { scale: 1.8, x: -0.3, y: -0.7, waterRect: [93, 92, 8, 9], rockRect: [86, 92, 8, 9], litRect: [93, 100, 8, 8], farRect: [143, 92, 8, 9] },
+  ])('seals nearby zero-light water at scale $scale while preserving rock and normal lighting', ({ scale, x, y, waterRect, rockRect, litRect, farRect }) => {
+    const world = new World(30, 30, 4), vision = createVision(world);
+    const player = createPlayer(32, 40), tank = createTank();
+    const water = world.index(13, 13), rock = world.index(12, 13), litAir = world.index(13, 14);
+    world.water[water] = 1;
+    world.setSolid(12, 13, true);
+    vision.light[rock] = vision.lamplight[rock] = 0.4;
+    vision.light[litAir] = vision.lamplight[litAir] = 0.3;
+    const before = { solid: world.solid.slice(), water: world.water.slice(), light: vision.light.slice() };
+    const rectangles: number[][] = [];
+    const fills: Array<{ operation: string; color: string; rectangles: number[][] }> = [];
+    const context = {
+      globalCompositeOperation: 'source-over', fillStyle: '', imageSmoothingEnabled: true,
+      save: () => {}, restore: () => {}, drawImage: () => {}, fillRect: () => {},
+      getTransform: () => ({ a: scale, d: scale, e: x, f: y }), setTransform: () => {},
+      beginPath: () => { rectangles.length = 0; },
+      rect: (...values: number[]) => rectangles.push(values),
+      fill: () => fills.push({ operation: context.globalCompositeOperation, color: context.fillStyle,
+        rectangles: rectangles.map(rectangle => [...rectangle]) }),
+    };
+    const maskContext = {
+      createImageData: (width: number, height: number) => ({ data: new Uint8ClampedArray(width * height * 4) }),
+      putImageData: () => {},
+    };
+    const renderer = Object.assign(Object.create(Renderer.prototype), {
+      context, lightMask: { width: 0, height: 0, getContext: () => maskContext },
+      lightChannels: [0, 0, 0], cameraX: 0, cameraY: 0, width: 120, height: 120,
+    }) as { drawLighting(session: Session, vision: ReturnType<typeof createVision>): void };
+    renderer.drawLighting({ world, player, tank } as Session, vision);
+
+    const seal = fills.find(fill => fill.operation === 'source-over' && fill.color === 'rgb(8,12,16)');
+    expect(seal).toBeDefined();
+    expect(seal?.rectangles).toContainEqual(waterRect);
+    expect(seal?.rectangles).not.toContainEqual(rockRect);
+    expect(seal?.rectangles).not.toContainEqual(litRect);
+    expect(seal?.rectangles).not.toContainEqual(farRect);
+    expect(world.solid).toEqual(before.solid);
+    expect(world.water).toEqual(before.water);
+    expect(vision.light).toEqual(before.light);
   });
 });
 

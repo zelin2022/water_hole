@@ -5,6 +5,7 @@ export const SONAR_TRAVEL_TIME = 2;
 export const SONAR_OUTLINE_LIFETIME = 0.5;
 export const SONAR_ATTACK_TIME = 0.025;
 export const TORSO_LIGHT_RADIUS = 55;
+export const TERRAIN_REVEAL_CELLS = 2;
 export const HEADLAMP_RANGE = 126;
 export const HEADLAMP_HALF_ANGLE = Math.PI / 5 * 0.9;
 export const DAYLIGHT_FALLOFF_DISTANCE = 64;
@@ -40,6 +41,8 @@ export interface VisionInput {
   time: number;
   debugVision?: boolean;
   torsoRadius?: number;
+  terrainRevealCells?: number;
+  bodyBounds?: { x: number; y: number; width: number; height: number };
   headlampRange?: number;
   headlampHalfAngle?: number;
 }
@@ -186,6 +189,8 @@ export function updateVision(world: World, state: VisionState, input: VisionInpu
   state.moonlight.set(state.daylight);
   state.lamplight.fill(0);
   const torsoRadius = input.torsoRadius ?? TORSO_LIGHT_RADIUS;
+  const terrainRadius = (input.terrainRevealCells ?? TERRAIN_REVEAL_CELLS) * world.cellSize;
+  const body = input.bodyBounds ?? { ...input.position, width: 0, height: 0 };
   const beamRange = input.headlampRange ?? HEADLAMP_RANGE;
   const halfAngle = input.headlampHalfAngle ?? HEADLAMP_HALF_ANGLE;
   const headPosition = input.headPosition ?? input.position;
@@ -199,10 +204,10 @@ export function updateVision(world: World, state: VisionState, input: VisionInpu
     directionY = aimY / aimDistance;
   }
   const coneLimit = Math.cos(halfAngle);
-  const minX = Math.max(1, Math.floor(Math.min(input.position.x - torsoRadius, headPosition.x - beamRange) / world.cellSize));
-  const maxX = Math.min(world.width - 2, Math.floor(Math.max(input.position.x + torsoRadius, headPosition.x + beamRange) / world.cellSize));
-  const minY = Math.max(1, Math.floor(Math.min(input.position.y - torsoRadius, headPosition.y - beamRange) / world.cellSize));
-  const maxY = Math.min(world.height - 2, Math.floor(Math.max(input.position.y + torsoRadius, headPosition.y + beamRange) / world.cellSize));
+  const minX = Math.max(1, Math.floor(Math.min(input.position.x - torsoRadius, headPosition.x - beamRange, body.x - terrainRadius) / world.cellSize));
+  const maxX = Math.min(world.width - 2, Math.floor(Math.max(input.position.x + torsoRadius, headPosition.x + beamRange, body.x + body.width + terrainRadius) / world.cellSize));
+  const minY = Math.max(1, Math.floor(Math.min(input.position.y - torsoRadius, headPosition.y - beamRange, body.y - terrainRadius) / world.cellSize));
+  const maxY = Math.min(world.height - 2, Math.floor(Math.max(input.position.y + torsoRadius, headPosition.y + beamRange, body.y + body.height + terrainRadius) / world.cellSize));
   for (let y = minY; y <= maxY; y++) {
     for (let x = minX; x <= maxX; x++) {
       const cellX = (x + 0.5) * world.cellSize;
@@ -219,6 +224,17 @@ export function updateVision(world: World, state: VisionState, input: VisionInpu
         strength = Math.max(strength, Math.pow(1 - distance / beamRange, 0.55) * edgeFade);
       }
       const index = world.index(x, y);
+      if (world.solid[index] && terrainRadius > 0) {
+        // A small band beyond the body exposes mining damage without opening
+        // sight into sealed air or water. The ordinary lamps still use rays.
+        const bodyDistance = Math.hypot(
+          Math.max(body.x - cellX, 0, cellX - body.x - body.width),
+          Math.max(body.y - cellY, 0, cellY - body.y - body.height),
+        );
+        if (bodyDistance < terrainRadius) {
+          strength = Math.max(strength, 0.6 * Math.sqrt(1 - bodyDistance / terrainRadius));
+        }
+      }
       state.lamplight[index] = dimLamplight(strength, state.moonlight[index]);
     }
   }

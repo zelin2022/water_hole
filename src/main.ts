@@ -135,7 +135,7 @@ function statDescription(id: UpgradeId): string {
     case 'climbSpeed': return `Climbing speed ${stats.climbSpeed} → ${next.climbSpeed ?? stats.climbSpeed}`;
     case 'jumpPower': return `Jump launch speed ${format(stats.jumpSpeed)} → ${format(next.jumpSpeed ?? stats.jumpSpeed)}`;
     case 'capacity': return `Water capacity ${stats.capacity} → ${next.capacity ?? stats.capacity} · Full unload ${format(stats.capacity / stats.unloadRate)}s → ${format(next.capacity / next.unloadRate)}s`;
-    case 'torsoLamp': return `Light radius ${format(stats.torsoRadius)} → ${format(next.torsoRadius ?? stats.torsoRadius)}`;
+    case 'torsoLamp': return `Light radius ${format(stats.torsoRadius)} → ${format(next.torsoRadius ?? stats.torsoRadius)} · Rock reveal ${format(stats.terrainRevealCells)} → ${format(next.terrainRevealCells ?? stats.terrainRevealCells)} cells`;
     case 'headlampWidth': return `Beam angle ${format(stats.headlampHalfAngle * 360 / Math.PI)}° → ${format((next.headlampHalfAngle ?? stats.headlampHalfAngle) * 360 / Math.PI)}°`;
     case 'headlampDepth': return `Beam depth ${format(stats.headlampRange)} → ${format(next.headlampRange ?? stats.headlampRange)}`;
     case 'detectorRange': return session.tank.upgrades.detector
@@ -308,9 +308,9 @@ function tick(time: number): void {
     if (session.completed) { audio.play('end'); saveRun(false); changeScreen('ended'); }
   }
   if (session.time - lastVisionAt > 0.075 || lastTerrainVersion !== session.world.terrainVersion || lastVisionAt < 0) {
-    const { torsoRadius, headlampRange, headlampHalfAngle } = upgradeStats(session.tank);
+    const { torsoRadius, headlampRange, headlampHalfAngle, terrainRevealCells } = upgradeStats(session.tank);
     updateVision(session.world, vision, { position: playerCenter(session), headPosition: { x: session.player.x + session.player.width / 2, y: session.player.y + 6 }, aim, facing: session.facing, time: session.time, debugVision: DEV_TOOLS_ENABLED && session.options.debugVision,
-      torsoRadius, headlampRange, headlampHalfAngle });
+      torsoRadius, headlampRange, headlampHalfAngle, terrainRevealCells, bodyBounds: session.player });
     lastVisionAt = session.time; lastTerrainVersion = session.world.terrainVersion;
   }
   audio.setScene(Math.max(0, (session.player.y - session.surfaceY) / session.world.cellSize),

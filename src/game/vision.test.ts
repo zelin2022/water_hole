@@ -5,7 +5,7 @@ import {
   computeDaylight, createVision, pingSonar, sonarOpacity, sonarTravelDistance, updateVision,
   pingSubsurfaceScanner, subsurfaceScannerOpacity,
   SONAR_COOLDOWN, SONAR_TRAVEL_TIME, SONAR_OUTLINE_LIFETIME,
-  HEADLAMP_RANGE, HEADLAMP_HALF_ANGLE, TORSO_LIGHT_RADIUS,
+  HEADLAMP_RANGE, HEADLAMP_HALF_ANGLE, TORSO_LIGHT_RADIUS, TERRAIN_REVEAL_CELLS,
 } from './vision';
 
 function undergroundRoom(width = 100, height = 50): World {
@@ -317,6 +317,122 @@ describe('local lamps and exploration', () => {
     expect(state.visible[world.index(4, 4)]).toBe(1);
     expect(state.light[world.index(4, 4)]).toBe(1);
     expect(state.explored[world.index(4, 4)]).toBe(0);
+  });
+});
+
+describe('tiny penetrating terrain halo', () => {
+  function chamber(cellSize = 4): World {
+    const world = new World(30, 30, cellSize);
+    for (let y = 1; y < world.height - 1; y++) {
+      for (let x = 1; x < world.width - 1; x++) world.setSolid(x, y, true);
+    }
+    for (let y = 8; y < 15; y++) {
+      for (let x = 4; x < 10; x++) world.setSolid(x, y, false);
+    }
+    return world;
+  }
+
+  function bodyInput(cellSize = 4) {
+    return {
+      position: { x: 9 * cellSize, y: 12.5 * cellSize },
+      bodyBounds: { x: 8 * cellSize, y: 10 * cellSize, width: 2 * cellSize, height: 5 * cellSize },
+      aim: { x: 0, y: 12.5 * cellSize }, facing: -1 as const, time: 0,
+      torsoRadius: 0, headlampRange: 0,
+    };
+  }
+
+  it.each([4, 12])('reveals two solid cells from the body edge with %s-pixel cells, falling off before the third', (cellSize) => {
+    expect(TERRAIN_REVEAL_CELLS).toBe(2);
+    const world = chamber(cellSize), state = createVision(world);
+    updateVision(world, state, bodyInput(cellSize));
+    const first = world.index(10, 12), second = world.index(11, 12), third = world.index(12, 12);
+    expect(state.lamplight[first]).toBeCloseTo(0.6 * Math.sqrt(0.75));
+    expect(state.lamplight[second]).toBeCloseTo(0.3);
+    expect(state.visible[first]).toBe(1);
+    expect(state.visible[second]).toBe(1);
+    expect(state.lamplight[third]).toBe(0);
+    // The lower body edge, far from the torso point, has the same two-cell halo.
+    expect(state.lamplight[world.index(8, 16)]).toBeCloseTo(0.3);
+    expect(state.lamplight[world.index(8, 17)]).toBe(0);
+  });
+
+  it('extends the soft boundary by 20% per torso upgrade without a large penetrating light', () => {
+    const world = chamber(), state = createVision(world), input = bodyInput();
+    const diagonal = world.index(11, 16), third = world.index(12, 12);
+    updateVision(world, state, { ...input, terrainRevealCells: 2 });
+    expect(state.visible[diagonal]).toBe(0);
+    expect(state.visible[third]).toBe(0);
+    updateVision(world, state, { ...input, terrainRevealCells: 2.4 });
+    expect(state.visible[diagonal]).toBe(1);
+    expect(state.visible[third]).toBe(0);
+    updateVision(world, state, { ...input, terrainRevealCells: 2.88 });
+    expect(state.visible[third]).toBe(1);
+    expect(state.visible[world.index(13, 12)]).toBe(0);
+  });
+
+  it('uses the torso point as a fallback and accepts zero to disable only the halo', () => {
+    const world = chamber(), state = createVision(world);
+    const input = { position: { x: 38, y: 50 }, aim: { x: 0, y: 50 }, facing: -1 as const,
+      time: 0, torsoRadius: 0, headlampRange: 0 };
+    updateVision(world, state, input);
+    expect(state.visible[world.index(10, 12)]).toBe(1);
+    expect(state.visible[world.index(11, 12)]).toBe(0);
+    updateVision(world, state, { ...input, terrainRevealCells: 0 });
+    expect(state.visible[world.index(10, 12)]).toBe(0);
+    // Disabling the halo retains normal first-face lighting and occlusion.
+    updateVision(world, state, { ...input, terrainRevealCells: 0, torsoRadius: 55 });
+    expect(state.visible[world.index(10, 12)]).toBe(1);
+    expect(state.visible[world.index(11, 12)]).toBe(0);
+  });
+
+  it('keeps air and water beyond a thin wall dark while revealing nearby solid terrain', () => {
+    const world = chamber(), state = createVision(world), input = bodyInput();
+    world.setSolid(11, 11, false);
+    world.setSolid(11, 12, false);
+    world.water[world.index(11, 12)] = 1;
+    const solid = world.solid.slice(), water = world.water.slice(), damage = world.damage.slice();
+    updateVision(world, state, { ...input, torsoRadius: 55, headlampRange: 126, aim: { x: 100, y: 50 } });
+    expect(state.visible[world.index(11, 13)]).toBe(1);
+    for (const y of [11, 12]) {
+      expect(state.visible[world.index(11, y)]).toBe(0);
+      expect(state.explored[world.index(11, y)]).toBe(0);
+      expect(state.lamplight[world.index(11, y)]).toBe(0);
+    }
+    expect(world.solid).toEqual(solid);
+    expect(world.water).toEqual(water);
+    expect(world.damage).toEqual(damage);
+    expect(state.sonar).toBeNull();
+    expect(state.subsurfaceScan).toBeNull();
+  });
+
+  it('merges with normal warm lamps using the stronger light and applies ambient suppression', () => {
+    const world = chamber(), state = createVision(world), input = bodyInput(), index = world.index(10, 12);
+    updateVision(world, state, { ...input, terrainRevealCells: 0, torsoRadius: 55 });
+    const normal = state.lamplight[index];
+    updateVision(world, state, { ...input, torsoRadius: 55 });
+    expect(state.lamplight[index]).toBe(normal);
+    updateVision(world, state, input);
+    const underground = state.lamplight[index];
+    // Expose this same face to ambient sky without changing the body distance.
+    for (let y = 1; y < 15; y++) world.setSolid(9, y, false);
+    updateVision(world, state, input);
+    expect(state.moonlight[index]).toBeGreaterThan(0);
+    expect(state.lamplight[index]).toBeLessThan(underground);
+    expect(state.lamplight[index]).toBeCloseTo(Math.max(0, underground - state.moonlight[index] * 0.85));
+  });
+
+  it('clears revealed terrain when the body moves away without leaving a permanent outline', () => {
+    const world = chamber(), state = createVision(world), input = bodyInput(), index = world.index(11, 12);
+    updateVision(world, state, input);
+    expect(state.visible[index]).toBe(1);
+    expect(state.explored[index]).toBe(1);
+    updateVision(world, state, { ...input, position: { x: 22, y: 50 },
+      bodyBounds: { ...input.bodyBounds, x: 16 }, time: 1 });
+    expect(state.visible[index]).toBe(0);
+    expect(state.light[index]).toBe(0);
+    expect(state.lamplight[index]).toBe(0);
+    expect(state.explored[index]).toBe(1);
+    expect(sonarOpacity(world, state, { x: 44, y: 50 }, 1)).toBe(0);
   });
 });
 

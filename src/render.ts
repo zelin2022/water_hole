@@ -382,6 +382,33 @@ export class Renderer {
     ctx.globalCompositeOperation = 'screen';
     ctx.fillStyle = `rgb(${DARKNESS.join(',')})`;
     ctx.fillRect(this.cameraX, this.cameraY, this.width / ZOOM, this.height / ZOOM);
+    // The smooth mask must not spread the solid-only halo into sealed water
+    // or air. Restore those dark cells locally, leaving ordinary lamp fades
+    // and distant lighting untouched. One path avoids seams between cells.
+    const { player } = session;
+    const size = world.cellSize;
+    const reach = size * (upgradeStats(session.tank).terrainRevealCells + 1);
+    const left = Math.max(0, Math.floor((player.x - reach) / size));
+    const right = Math.min(world.width - 1, Math.floor((player.x + player.width + reach) / size));
+    const top = Math.max(0, Math.floor((player.y - reach) / size));
+    const bottom = Math.min(world.height - 1, Math.floor((player.y + player.height + reach) / size));
+    const transform = ctx.getTransform();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.beginPath();
+    for (let y = top; y <= bottom; y++) {
+      for (let x = left; x <= right; x++) {
+        const index = world.index(x, y);
+        if (world.solid[index] || vision.light[index] !== 0) continue;
+        // Cover complete physical pixels so the sealing edge cannot itself
+        // blend the hidden liquid colour back into view at fractional zoom.
+        const px = Math.floor(x * size * transform.a + transform.e);
+        const py = Math.floor(y * size * transform.d + transform.f);
+        ctx.rect(px, py, Math.ceil((x + 1) * size * transform.a + transform.e) - px,
+          Math.ceil((y + 1) * size * transform.d + transform.f) - py);
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fill();
     ctx.restore();
   }
 

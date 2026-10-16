@@ -45,6 +45,19 @@ describe('tank and incremental sales', () => {
 });
 
 describe('equipment purchases', () => {
+  it('extends the two-cell terrain halo by 20% with each torso lamp purchase only', () => {
+    const tank = createTank(); tank.credits = 1000;
+    expect(upgradeStats(tank).terrainRevealCells).toBe(2);
+    for (let level = 1; level <= 2; level++) {
+      expect(buyUpgrade(tank, 'torsoLamp')).toBe(true);
+      expect(upgradeStats(tank).terrainRevealCells).toBeCloseTo(2 * 1.2 ** level, 10);
+    }
+    const radius = upgradeStats(tank).terrainRevealCells;
+    for (const id of ['headlampWidth', 'headlampDepth'] as const) {
+      expect(buyUpgrade(tank, id)).toBe(true); expect(buyUpgrade(tank, id)).toBe(true);
+    }
+    expect(upgradeStats(tank).terrainRevealCells).toBe(radius);
+  });
   it('starts with a 30% shorter, 10% narrower headlamp and the original torso light radius', () => {
     const stats = upgradeStats(createTank());
     expect(stats.headlampRange).toBeCloseTo(180 * 0.7, 10);
@@ -70,7 +83,8 @@ describe('equipment purchases', () => {
       expect(tank.upgrades[id]).toBe(level);
       const stats = upgradeStats(tank);
       expect(stats[stat]).toBeCloseTo(base * 1.2 ** level, 10);
-      expect(stats).toEqual({ ...initial, [stat]: stats[stat] });
+      expect(stats).toEqual({ ...initial, [stat]: stats[stat],
+        terrainRevealCells: initial.terrainRevealCells * (id === 'torsoLamp' ? 1.2 ** level : 1) });
       expect(tank.credits).toBe(0);
       expect(tank.water).toBe(12);
       expect(tank.capacity).toBe(20);
