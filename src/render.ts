@@ -258,6 +258,7 @@ export class Renderer {
     const ctx = this.waterLayer.getContext('2d')!;
     ctx.setTransform(1, 0, 0, 1, 0, -top);
     ctx.clearRect(0, top, this.waterLayer.width, this.waterLayer.height);
+    ctx.globalAlpha = 1;
     const depth = ctx.createLinearGradient(0, this.cameraY, 0, this.cameraY + this.height / ZOOM);
     depth.addColorStop(0, '#348f95'); depth.addColorStop(1, '#225e6b');
     for (let y = minY; y <= maxY; y++) {
@@ -269,9 +270,20 @@ export class Renderer {
       };
       for (let x = minX; x <= maxX + 1; x++) {
         const i = world.index(x, y);
-        const amount = x <= maxX ? clamp(world.water[i], 0, 1) : 0;
+        const amount = x <= maxX && !world.solid[i] ? clamp(world.water[i], 0, 1) : 0;
         if (amount > 0.98) { if (start < 0) start = x; }
-        else { flush(x); if (amount > 0.006) { ctx.fillStyle = '#368c94'; ctx.fillRect(x * s, (y + 1 - amount) * s, s, amount * s); } }
+        else {
+          flush(x);
+          if (amount > 0.006) {
+            const falling = world.solid[i + world.width] === 0 && world.water[i + world.width] < 0.98;
+            ctx.fillStyle = '#368c94';
+            // Fractional falling cells represent a stream through the whole cell,
+            // while a resting puddle occupies only its measured bottom fraction.
+            ctx.globalAlpha = falling ? Math.sqrt(amount) : 1;
+            ctx.fillRect(x * s, falling ? y * s : (y + 1 - amount) * s, s, falling ? s : amount * s);
+            ctx.globalAlpha = 1;
+          }
+        }
       }
     }
     ctx.strokeStyle = '#91c7c3'; ctx.lineWidth = 0.65;
@@ -279,7 +291,8 @@ export class Renderer {
       ctx.beginPath();
       for (let x = minX; x <= maxX; x++) {
         const i = world.index(x, y); const amount = world.water[i];
-        if (amount < 0.08 || (y > 0 && world.water[i - world.width] > 0.08)) continue;
+        const falling = world.solid[i + world.width] === 0 && world.water[i + world.width] < 0.98;
+        if (world.solid[i] || falling || amount < 0.08 || (y > 0 && world.water[i - world.width] > 0.08)) continue;
         const py = (y + 1 - amount) * s + Math.sin(x * 0.28 + session.time * 1.6) * 0.22;
         ctx.moveTo(x * s, py); ctx.lineTo((x + 1) * s, py);
       }

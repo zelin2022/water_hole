@@ -43,6 +43,98 @@ describe('water simulation', () => {
     expect(totalWater(world)).toBeCloseTo(1, 5);
   });
 
+  it('moves a falling column together instead of attenuating its drainage through every row', () => {
+    const world = new World(9, 40);
+    for (let y = 3; y <= 14; y++) world.water[world.index(4, y)] = 1;
+
+    stepWater(world, 1 / 120);
+
+    expect(world.water[world.index(4, 3)]).toBeLessThan(0.001);
+    expect(world.water[world.index(4, 15)]).toBeGreaterThan(0.999);
+    expect(totalWater(world)).toBeCloseTo(12, 5);
+  });
+
+  it('drops a large unsupported body promptly without stretching it into a long dilute trail', () => {
+    const world = new World(80, 180);
+    for (let y = 10; y < 18; y++) for (let x = 20; x < 36; x++) world.water[world.index(x, y)] = 1;
+    const initialCenter = 13.5;
+    for (let frame = 0; frame < 60; frame++) stepWater(world, 1 / 60);
+
+    let moment = 0;
+    for (let y = 1; y < world.height - 1; y++) for (let x = 1; x < world.width - 1; x++) {
+      moment += y * world.water[world.index(x, y)];
+    }
+    const center = moment / totalWater(world);
+    expect(center - initialCenter).toBeGreaterThanOrEqual(100);
+    let body = 0;
+    for (let y = Math.floor(center - 6); y <= Math.ceil(center + 6); y++) {
+      for (let x = 1; x < world.width - 1; x++) body += world.water[world.index(x, y)];
+    }
+    expect(body).toBeGreaterThan(127);
+    expect(totalWater(world)).toBeCloseTo(128, 4);
+  });
+
+  it('drains a large body down a stepped slope instead of holding it in a block', () => {
+    const world = new World(80, 100);
+    for (let x = 1; x < world.width - 1; x++) {
+      for (let y = 35 + Math.floor(x / 2); y < world.height - 1; y++) world.setSolid(x, y, true);
+    }
+    for (let y = 14; y < 24; y++) for (let x = 8; x < 18; x++) world.water[world.index(x, y)] = 1;
+    for (let frame = 0; frame < 180; frame++) stepWater(world, 1 / 60);
+
+    let moment = 0, downhill = 0;
+    for (let y = 0; y < world.height; y++) for (let x = 0; x < world.width; x++) {
+      const amount = world.water[world.index(x, y)];
+      moment += x * amount;
+      if (x >= 24) downhill += amount;
+      expect(amount).toBeGreaterThanOrEqual(0);
+      expect(amount).toBeLessThanOrEqual(1);
+      if (world.isSolid(x, y)) expect(amount).toBe(0);
+    }
+    expect(moment / totalWater(world)).toBeGreaterThanOrEqual(24);
+    expect(downhill).toBeGreaterThanOrEqual(40);
+    expect(totalWater(world)).toBeCloseTo(100, 3);
+  });
+
+  it('keeps diagonal corner gaps sealed when water takes downhill routes', () => {
+    const world = new World(8, 8);
+    solidInterior(world);
+    open(world, [3, 3], [4, 4]);
+    world.water[world.index(3, 3)] = 1;
+    for (let frame = 0; frame < 180; frame++) stepWater(world, 1 / 60);
+    expect(world.water[world.index(3, 3)]).toBe(1);
+    expect(world.water[world.index(4, 4)]).toBe(0);
+    expect(totalWater(world)).toBe(1);
+  });
+
+  it('empties a large reservoir through a narrow shaft without leaving a stalled pillar above its basin', () => {
+    const world = new World(64, 160);
+    solidInterior(world);
+    for (let y = 10; y <= 26; y++) for (let x = 8; x <= 39; x++) {
+      world.setSolid(x, y, false);
+      if (y <= 25) world.water[world.index(x, y)] = 1;
+    }
+    for (let y = 27; y <= 149; y++) for (let x = 23; x <= 24; x++) world.setSolid(x, y, false);
+    for (let y = 120; y <= 149; y++) for (let x = 8; x <= 54; x++) world.setSolid(x, y, false);
+    for (let frame = 0; frame < 600; frame++) stepWater(world, 1 / 60);
+
+    let basin = 0;
+    for (let y = 120; y <= 149; y++) for (let x = 8; x <= 54; x++) basin += world.water[world.index(x, y)];
+    expect(basin).toBeGreaterThan(450);
+    expect(totalWater(world)).toBeCloseTo(512, 3);
+  });
+
+  it('advances the same drainage at 30, 60 and 120 updates per second', () => {
+    const simulate = (hz: number) => {
+      const world = new World(24, 60);
+      for (let y = 4; y <= 12; y++) for (let x = 8; x < 16; x++) world.water[world.index(x, y)] = 1;
+      for (let frame = 0; frame < hz * 2; frame++) stepWater(world, 1 / hz);
+      return world.water;
+    };
+    expect(simulate(30)).toEqual(simulate(60));
+    expect(simulate(120)).toEqual(simulate(60));
+  });
+
   it('conserves water without negative, overflowing, solid, or out-of-bounds cells', () => {
     const world = new World(24, 24);
     for (let y = 1; y < 12; y += 1) {

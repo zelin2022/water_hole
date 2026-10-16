@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { Renderer } from './render';
 import { World } from './game/world';
+import type { Session } from './game/session';
 
 /** Only opacity is relevant here; illustration paths are checked in the browser. */
 class OpacityCanvas {
   width = 0;
   height = 0;
   readonly pixels = new Set<string>();
+  readonly fills: Array<{ x: number; y: number; width: number; height: number; alpha: number }> = [];
+  readonly lines: Array<{ x: number; y: number }> = [];
   private offsetX = 0;
   private offsetY = 0;
   readonly context = {
@@ -22,6 +25,7 @@ class OpacityCanvas {
     fillRect: (x: number, y: number, w: number, h: number): void => {
       x += this.offsetX; y += this.offsetY;
       if (this.context.globalAlpha <= 0) return;
+      this.fills.push({ x, y, width: w, height: h, alpha: this.context.globalAlpha });
       for (let py = Math.max(0, Math.floor(y)); py < Math.min(this.height, y + h); py++) {
         for (let px = Math.max(0, Math.floor(x)); px < Math.min(this.width, x + w); px++) {
           const key = `${px},${py}`;
@@ -36,7 +40,9 @@ class OpacityCanvas {
         if (dx >= 0 && dy >= 0 && dx < this.width && dy < this.height) this.pixels.add(`${dx},${dy}`);
       }
     },
-    beginPath: (): void => {}, moveTo: (): void => {}, lineTo: (): void => {},
+    createLinearGradient: () => ({ addColorStop: (): void => {} }),
+    beginPath: (): void => {}, moveTo: (): void => {},
+    lineTo: (x: number, y: number): void => { this.lines.push({ x: x + this.offsetX, y: y + this.offsetY }); },
     closePath: (): void => {}, fill: (): void => {}, stroke: (): void => {},
   };
   getContext(): typeof this.context { return this.context; }
@@ -83,5 +89,87 @@ describe('terrain rendering', () => {
     expect(renderer.terrainTop).toBeGreaterThan(7000);
     expect(terrain.pixels.has(`9,${7982 - renderer.terrainTop}`)).toBe(true);
     expect(terrain.pixels.has(`13,${7982 - renderer.terrainTop}`)).toBe(false);
+  });
+});
+
+function renderWater(world: World, cameraY = 0): { water: OpacityCanvas; output: OpacityCanvas } {
+  const water = new OpacityCanvas();
+  const output = new OpacityCanvas();
+  output.width = world.width * world.cellSize;
+  output.height = world.height * world.cellSize;
+  const renderer = Object.assign(Object.create(Renderer.prototype), {
+    waterLayer: water, context: output.context,
+    cameraX: 0, cameraY, width: 100, height: 80,
+  }) as { drawWater(session: Session): void };
+  renderer.drawWater({ world, time: 0 } as Session);
+  return { water, output };
+}
+
+describe('water rendering', () => {
+  it('draws unsupported partial water as a continuous translucent column without pool surface stripes', () => {
+    const world = new World(10, 14);
+    for (let y = 3; y <= 6; y++) world.water[world.index(4, y)] = 0.25;
+    const before = world.water.slice();
+    const { water } = renderWater(world);
+
+    for (let y = 12; y < 28; y++) expect(water.pixels.has(`17,${y}`)).toBe(true);
+    expect(water.fills).toHaveLength(4);
+    expect(water.fills.every(fill => fill.height === 4 && fill.alpha > 0 && fill.alpha < 1)).toBe(true);
+    expect(water.lines).toHaveLength(0);
+    expect(water.context.globalAlpha).toBe(1);
+    expect(world.water).toEqual(before);
+  });
+
+  it('retains the actual height and surface highlight of a supported partial puddle', () => {
+    const world = new World(10, 12);
+    world.setSolid(4, 7, true);
+    world.water[world.index(4, 6)] = 0.25;
+    const { water } = renderWater(world);
+
+    expect(water.pixels.has('17,24')).toBe(false);
+    expect(water.pixels.has('17,26')).toBe(false);
+    expect(water.pixels.has('17,27')).toBe(true);
+    expect(water.fills).toEqual([{ x: 16, y: 27, width: 4, height: 1, alpha: 1 }]);
+    expect(water.lines).toHaveLength(1);
+  });
+
+  it('supports water above a full cell and makes denser falling water less transparent', () => {
+    const world = new World(10, 14);
+    world.water[world.index(2, 4)] = 0.25;
+    world.water[world.index(2, 5)] = 1;
+    world.water[world.index(5, 4)] = 0.25;
+    world.water[world.index(6, 4)] = 0.75;
+    const { water } = renderWater(world);
+
+    const supported = water.fills.find(fill => fill.x === 8 && fill.y >= 16 && fill.y < 20)!;
+    const lightStream = water.fills.find(fill => fill.x === 20 && fill.y === 16)!;
+    const denseStream = water.fills.find(fill => fill.x === 24 && fill.y === 16)!;
+    expect(supported.height).toBe(1);
+    expect(supported.alpha).toBe(1);
+    expect(lightStream.height).toBe(4);
+    expect(denseStream.height).toBe(4);
+    expect(denseStream.alpha).toBeGreaterThan(lightStream.alpha);
+  });
+
+  it('does not draw stale liquid values in solid terrain', () => {
+    const world = new World(10, 12);
+    world.setSolid(4, 5, true);
+    world.water[world.index(4, 5)] = 0.5;
+    const { water } = renderWater(world);
+    expect(water.fills).toHaveLength(0);
+    expect(water.lines).toHaveLength(0);
+  });
+
+  it('keeps falling columns continuous in a viewport far below the surface', () => {
+    const world = new World(10, 2053);
+    for (let y = 1995; y <= 1998; y++) world.water[world.index(4, y)] = 0.25;
+    const { water, output } = renderWater(world, 7980);
+
+    expect(water.height).toBeLessThan(100);
+    for (let y = 0; y < 16; y++) {
+      expect(water.pixels.has(`17,${y}`)).toBe(true);
+      expect(output.pixels.has(`17,${7980 + y}`)).toBe(true);
+    }
+    expect(water.lines).toHaveLength(0);
   });
 });
