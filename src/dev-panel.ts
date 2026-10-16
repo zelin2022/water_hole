@@ -1,4 +1,4 @@
-import { MAX_DEV_CREDITS, setDevCredits, setOmniVision } from './game/dev-tools';
+import { MAX_DEV_CREDITS, setDevCredits, setOmniVision, setStepHeight } from './game/dev-tools';
 import type { Session } from './game/session';
 
 interface DevPanelActions {
@@ -13,8 +13,9 @@ export class DevPanel {
   constructor(private readonly panel: HTMLElement, private readonly actions: DevPanelActions) {
     panel.addEventListener('change', event => {
       const input = event.target as HTMLInputElement;
-      if (!actions.isOpen() || input.id !== 'dev-omni-vision') return;
-      if (setOmniVision(actions.session(), input.checked)) actions.changed();
+      if (!actions.isOpen()) return;
+      if (input.id === 'dev-omni-vision' && setOmniVision(actions.session(), input.checked)) actions.changed();
+      else if (input.id === 'dev-step-height' && setStepHeight(actions.session(), Number(input.value) as 1 | 2)) actions.changed();
     });
     panel.addEventListener('submit', event => {
       if (!actions.isOpen() || (event.target as HTMLFormElement).id !== 'dev-credits-form') return;
@@ -38,6 +39,7 @@ export class DevPanel {
     return `<span class="eyebrow">PROVISIONAL TOOLS</span><h1>Dev panel</h1>
       <p class="panel-intro">Changes apply to this expedition. Gameplay is paused.</p>
       <label class="setting-row">Omni vision<input id="dev-omni-vision" type="checkbox" ${session.options.debugVision ? 'checked' : ''}></label>
+      <label class="setting-row">Auto-step height<select id="dev-step-height">${([1, 2] as const).map(cells => `<option value="${cells}" ${session.options.stepHeightCells === cells ? 'selected' : ''}>${cells} ${cells === 1 ? 'cell' : 'cells'} (${cells * session.world.cellSize} px)</option>`).join('')}</select></label>
       <form id="dev-credits-form"><label class="setting-row">Set credits to<input id="dev-credits" type="number" min="0" max="${MAX_DEV_CREDITS}" step="any" value="${session.tank.credits}" required></label>
         <button type="submit" class="primary-button">Set credits</button></form>
       <p id="dev-feedback" class="small-note" role="status" aria-live="polite"></p>

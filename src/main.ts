@@ -7,6 +7,7 @@ import { ACTION_LABELS, DEFAULT_SETTINGS, keyLabel, readSettings, rebind, RESOLU
 import { AudioEngine } from './audio';
 import { Renderer } from './render';
 import { DevPanel } from './dev-panel';
+import { DEFAULT_STEP_HEIGHT_CELLS } from './game/player';
 
 declare global {
   interface Window { waterHoleDesktop?: { setDisplay(options: { fullscreen: boolean; width: number; height: number }): Promise<void>; quit(): void } }
@@ -69,7 +70,10 @@ function saveRun(notify = true): boolean {
   catch { if (notify) notice('Could not save. Local storage may be full or unavailable.'); return false; }
 }
 function restore(next: Session): void {
-  if (!DEV_TOOLS_ENABLED) next.options.debugVision = false;
+  if (!DEV_TOOLS_ENABLED) {
+    next.options.debugVision = false;
+    next.options.stepHeightCells = DEFAULT_STEP_HEIGHT_CELLS;
+  }
   session = next; hasRun = true; vision = createVision(session.world, session.explored);
   vision.sonar = session.sonar; vision.lastSonarAt = session.lastSonarAt; pointer.active = false;
   const centre = playerCenter(session); aim = { x: centre.x + session.facing * 80, y: centre.y };

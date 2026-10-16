@@ -3,6 +3,7 @@ import { DEMO_DELIVERY_LIMIT, DIG_INTERVAL, DIG_WINDUP, type Session } from './s
 import { World } from './world';
 import { totalWater } from './water';
 import { detachSmallDirt, DIRT_TERMINAL_SPEED } from './dirt';
+import { DEFAULT_STEP_HEIGHT_CELLS } from './player';
 
 export const SAVE_VERSION = 1;
 const MAX_CELLS = 1024 * 1024;
@@ -72,6 +73,8 @@ export function deserializeSession(json: string): Session {
     && ['remembered', 'sonar'].includes(state.options.caveMemory)
     && ['character', 'mouse'].includes(state.options.headlamp)
     && typeof state.options.debugVision === 'boolean', 'comparison options');
+  const stepHeightCells = state.options.stepHeightCells === undefined ? DEFAULT_STEP_HEIGHT_CELLS : state.options.stepHeightCells;
+  assert(stepHeightCells === 1 || stepHeightCells === 2, 'comparison options');
   assert(finite(state.surfaceY, 0, extentY) && point(state.hopper, extentX, extentY), 'surface or machine');
   assert(finite(state.time) && finite(state.initialWater) && finite(state.delivered, 0, DEMO_DELIVERY_LIMIT), 'progress ledger');
   const devCreditAdjustment = state.devCreditAdjustment === undefined ? 0 : state.devCreditAdjustment;
@@ -123,5 +126,6 @@ export function deserializeSession(json: string): Session {
   // Existing active v1 runs may contain old floating obstacles. Migrate once;
   // completed runs retain their frozen terrain and new saves keep their debris.
   if (state.fallingDirt === undefined && !state.completed) fallingDirt = detachSmallDirt(world);
-  return { ...state, world, fallingDirt, devCreditAdjustment, explored: Uint8Array.from(state.explored) } as Session;
+  return { ...state, world, fallingDirt, devCreditAdjustment, options: { ...state.options, stepHeightCells },
+    explored: Uint8Array.from(state.explored) } as Session;
 }

@@ -36,20 +36,28 @@ export const MIN_WALL_CONTACT = 12;
 // A held grip can bridge two terrain cells and follow equally small outward ledges.
 export const WALL_CONTOUR_REACH = 8;
 const WALL_STRUCTURE_DEPTH = 12;
+export const DEFAULT_STEP_HEIGHT_CELLS = 2;
+
+export interface PlayerMovementOptions {
+  climbSpeed?: number;
+  stepHeightCells?: 1 | 2;
+}
 
 /** Small collision steps keep even a delayed frame from skipping thin terrain. */
-export function stepPlayer(world: World, player: Player, input: PlayerInput, dt: number, options: { climbSpeed?: number } = {}): void {
+export function stepPlayer(world: World, player: Player, input: PlayerInput, dt: number, options: PlayerMovementOptions = {}): void {
   if (!Number.isFinite(dt) || dt <= 0) return;
   const steps = Math.ceil(dt / (1 / 120));
   const step = dt / steps;
   for (let i = 0; i < steps; i++) {
-    updatePlayer(world, player, input, step, i === 0 && input.jumpPressed, options.climbSpeed ?? CLIMB_SPEED);
+    updatePlayer(world, player, input, step, i === 0 && input.jumpPressed,
+      options.climbSpeed ?? CLIMB_SPEED, world.cellSize * (options.stepHeightCells ?? DEFAULT_STEP_HEIGHT_CELLS));
   }
 }
 
-function updatePlayer(world: World, player: Player, input: PlayerInput, dt: number, jumpPressed: boolean, climbSpeed: number): void {
+function updatePlayer(world: World, player: Player, input: PlayerInput, dt: number, jumpPressed: boolean, climbSpeed: number, stepHeight: number): void {
   const horizontal = Number(input.right) - Number(input.left);
   player.grounded = player.vy >= 0 && touchesFloor(world, player);
+  const startedGrounded = player.grounded;
 
   if (player.suppressedWall && !touchesWall(world, player, player.suppressedWall)) {
     player.suppressedWall = 0;
@@ -95,7 +103,14 @@ function updatePlayer(world: World, player: Player, input: PlayerInput, dt: numb
 
   player.vy = Math.min(MAX_FALL_SPEED, player.vy + GRAVITY * dt);
   moveVertical(world, player, player.vy * dt);
-  const hitWall = moveHorizontal(world, player, player.vx * dt);
+  const canStep = startedGrounded && !jumpPressed && player.grounded;
+  const previousX = player.x;
+  const distance = player.vx * dt;
+  const steppedUp = canStep && tryStepUp(world, player, distance, stepHeight);
+  const hitWall = steppedUp ? 0 : moveHorizontal(world, player, distance);
+  if (canStep && Math.abs(player.x - previousX) > EPSILON && !touchesFloor(world, player)) {
+    followGround(world, player, stepHeight);
+  }
   player.grounded = player.vy >= 0 && touchesFloor(world, player);
   const contact = hitWall && hasClimbingSupport(world, player, hitWall)
     ? hitWall
@@ -179,6 +194,55 @@ function canOccupy(world: World, player: Player, x: number, y: number): boolean 
     }
   }
   return true;
+}
+
+/** Check the complete swept path, including a ceiling above the starting position. */
+function canTraverse(world: World, player: Player, dx: number, dy: number): boolean {
+  const steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / Math.min(1, world.cellSize));
+  for (let i = 1; i <= steps; i++) {
+    if (!canOccupy(world, player, player.x + dx * i / steps, player.y + dy * i / steps)) return false;
+  }
+  return true;
+}
+
+/** A walking step is upward clearance followed by actual horizontal progress onto support. */
+function tryStepUp(world: World, player: Player, distance: number, maximumRise: number): boolean {
+  if (Math.abs(distance) <= EPSILON || canOccupy(world, player, player.x + distance, player.y)) return false;
+  const size = world.cellSize;
+  const targetX = player.x + distance;
+  let highestObstacle = Infinity;
+  for (let y = Math.floor((player.y + EPSILON) / size); y <= Math.floor((player.y + player.height - EPSILON) / size); y++) {
+    for (let x = Math.floor((targetX + EPSILON) / size); x <= Math.floor((targetX + player.width - EPSILON) / size); x++) {
+      if (world.isSolid(x, y)) highestObstacle = Math.min(highestObstacle, y * size);
+    }
+  }
+  const rise = player.y + player.height - highestObstacle;
+  if (rise <= EPSILON || rise > maximumRise + EPSILON || !canTraverse(world, player, 0, -rise)) return false;
+  const raised = { ...player, y: player.y - rise };
+  if (!canTraverse(world, raised, distance, 0) || !touchesFloor(world, { ...raised, x: targetX })) return false;
+  player.x = targetX;
+  player.y = raised.y;
+  player.vy = 0;
+  player.grounded = true;
+  return true;
+}
+
+/** Follow a nearby lower tread only after walking off an existing supporting floor. */
+function followGround(world: World, player: Player, maximumDrop: number): void {
+  const size = world.cellSize;
+  const feet = player.y + player.height;
+  for (let y = Math.floor((feet + EPSILON) / size); y <= Math.floor((feet + maximumDrop + EPSILON) / size); y++) {
+    const drop = y * size - feet;
+    if (drop < -EPSILON || drop > maximumDrop + EPSILON) continue;
+    for (let x = Math.floor((player.x + EPSILON) / size); x <= Math.floor((player.x + player.width - EPSILON) / size); x++) {
+      if (!world.isSolid(x, y)) continue;
+      if (!canTraverse(world, player, 0, drop)) return;
+      player.y += drop;
+      player.vy = 0;
+      player.grounded = true;
+      return;
+    }
+  }
 }
 
 /** Trace small steps in a rough wall without moving through solid terrain. */

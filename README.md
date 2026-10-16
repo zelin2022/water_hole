@@ -28,6 +28,8 @@ New Game offers independent comparisons for dim remembered cave outlines versus 
 
 The underground starter shaft is beside the exchange. Airborne wall contact attaches only while falling. Hold S to descend after attaching, then work from the shaft floor to reach the first reservoir. Digging while attached is disabled until the work-harness upgrade is purchased.
 
+Grounded walking automatically steps up and follows down small terrain changes, up to two cells (8 pixels) by default. Stepping requires clear space above the character. Larger ledges and drops retain the normal jumping, climbing, and falling controls.
+
 Clinging needs hand/torso contact backed by connected wall terrain. Uneven dug faces remain climbable: held grips follow shallow recesses and ledges, while foot-level bumps and isolated cells do not catch the character. The attached pose grips the wall with both hands before the harness upgrade, then visibly wields the pickaxe after installation. Underground darkness conceals the environment. Pale moonlight enters exposed openings and weakens in narrow shafts; warm head/torso lights reveal the nearby surroundings. Player lamps dim in strong ambient light and recover in darkness, including when aimed from the surface into a dark tunnel. Remembered mode keeps a faint explored outline, while sonar mode needs light or a ping to reveal it.
 
 Detached dirt islands of up to three cells fall away and disappear on landing. The fragments do not block movement or displace water. Larger islands and stone stay intact.
@@ -55,9 +57,9 @@ Unavailable and fully installed upgrades are hidden. Eligible upgrades without e
 
 Press the backtick key (`` ` ``) during an expedition to open the provisional developer panel. It also opens from pause or the equipment shop. Gameplay pauses while the panel is open; backtick, Escape, or Close panel returns to the previous screen.
 
-The panel has two tools: toggle omni vision, and set the current credit balance to a nonnegative amount up to 1 billion. Changes are saved with the expedition. Development credits do not count as delivered water or advance the demo cutoff, and omni vision does not permanently explore the whole map.
+The panel lets you toggle omni vision, set the current credit balance to a nonnegative amount up to 1 billion, and compare one-cell versus two-cell walking steps. Changes are saved with the expedition. Development credits do not count as delivered water or advance the demo cutoff, and omni vision does not permanently explore the whole map.
 
-The build flag `VITE_DEV_TOOLS=true` in `.env` enables these tools for current browser, desktop, and packaged playtests. `.env.release` disables them for `npm run build:release` and the release packaging commands below. A disabled build excludes the panel and hotkey and ignores saved omni-vision overrides. Restart the development server after changing the flag. Environment overrides take precedence over the `.env` files.
+The build flag `VITE_DEV_TOOLS=true` in `.env` enables these tools for current browser, desktop, and packaged playtests. `.env.release` disables them for `npm run build:release` and the release packaging commands below. A disabled build excludes the panel and hotkey, ignores saved omni-vision overrides, and uses the two-cell walking-step default. Restart the development server after changing the flag. Environment overrides take precedence over the `.env` files.
 
 ## Saving
 

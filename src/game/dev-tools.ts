@@ -16,3 +16,10 @@ export function setOmniVision(session: Session, enabled: boolean): boolean {
   session.options.debugVision = enabled;
   return true;
 }
+
+/** Compare small walking steps without changing terrain, movement state or progress. */
+export function setStepHeight(session: Session, cells: 1 | 2): boolean {
+  if (session.completed || (cells !== 1 && cells !== 2)) return false;
+  session.options.stepHeightCells = cells;
+  return true;
+}

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buyUpgrade, depositAtHopper } from './economy';
 import { createSession, DEMO_DELIVERY_LIMIT, stepSession, type GameInput, type Session } from './session';
 import { totalWater } from './water';
-import { MAX_DEV_CREDITS, setDevCredits, setOmniVision } from './dev-tools';
+import { MAX_DEV_CREDITS, setDevCredits, setOmniVision, setStepHeight } from './dev-tools';
 
 function stockTank(session: Session, amount: number): void {
   let remaining = amount;
@@ -20,6 +20,25 @@ const idle: GameInput = {
 };
 
 describe('provisional development controls', () => {
+  it('changes only the walking step comparison during a run', () => {
+    const session = createSession();
+    const before = JSON.parse(JSON.stringify(session));
+    expect(setStepHeight(session, 1)).toBe(true);
+    before.options.stepHeightCells = 1;
+    expect(JSON.parse(JSON.stringify(session))).toEqual(before);
+    expect(setStepHeight(session, 2)).toBe(true);
+    expect(session.options.stepHeightCells).toBe(2);
+  });
+
+  it('rejects unsupported walking step comparisons without changing the run', () => {
+    const session = createSession();
+    for (const value of [0, 3, 1.5, Number.NaN, '1', null]) {
+      const before = JSON.stringify(session);
+      expect(setStepHeight(session, value as 1 | 2)).toBe(false);
+      expect(JSON.stringify(session)).toBe(before);
+    }
+  });
+
   it('starts each run without any credit adjustment', () => {
     expect(createSession().devCreditAdjustment).toBe(0);
   });
@@ -84,6 +103,7 @@ describe('provisional development controls', () => {
     const before = JSON.stringify(session);
     expect(setDevCredits(session, 500)).toBe(false);
     expect(setOmniVision(session, true)).toBe(false);
+    expect(setStepHeight(session, 1)).toBe(false);
     stepSession(session, idle, 1);
     expect(JSON.stringify(session)).toBe(before);
   });

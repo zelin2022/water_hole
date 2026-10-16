@@ -31,6 +31,30 @@ function advance(session: Session, seconds: number, input: Partial<GameInput> = 
 }
 
 describe('demo session', () => {
+  it('defaults to two-cell walking steps and preserves the one-cell comparison', () => {
+    expect(createSession().options.stepHeightCells).toBe(2);
+    expect(createSession({ stepHeightCells: 1 }).options.stepHeightCells).toBe(1);
+  });
+
+  it('uses the selected walking step height during ordinary session simulation', () => {
+    const oneCell = fixture(), twoCells = fixture();
+    oneCell.options.stepHeightCells = 1;
+    twoCells.options.stepHeightCells = 2;
+    for (const session of [oneCell, twoCells]) {
+      for (let x = 24; x < 40; x++) {
+        session.world.setSolid(x, 28, true);
+        session.world.setSolid(x, 29, true);
+      }
+      advance(session, 0.15, { right: true });
+    }
+    expect(oneCell.player.x).toBe(80);
+    expect(oneCell.player.y).toBe(88);
+    expect(twoCells.player.x).toBeGreaterThan(80);
+    expect(twoCells.player.y).toBe(80);
+    expect(twoCells.player.grounded).toBe(true);
+    expect(twoCells.player.wall).toBe(0);
+  });
+
   it('starts a reproducible site with comparison choices preserved', () => {
     const session = createSession({ seed: 123, caveMemory: 'sonar', headlamp: 'mouse' });
     expect(session.seed).toBe(123);

@@ -1,4 +1,4 @@
-import { createPlayer, stepPlayer, type Player, type PlayerInput } from './player';
+import { createPlayer, DEFAULT_STEP_HEIGHT_CELLS, stepPlayer, type Player, type PlayerInput } from './player';
 import { buyUpgrade, collectIntoTank, createTank, depositAtHopper, upgradeStats, type Tank, type UpgradeId } from './economy';
 import type { Point, World } from './world';
 import { stepWater, totalWater } from './water';
@@ -29,6 +29,7 @@ export interface SessionOptions {
   caveMemory?: 'remembered' | 'sonar';
   headlamp?: 'character' | 'mouse';
   debugVision?: boolean;
+  stepHeightCells?: 1 | 2;
 }
 export interface LastStrike { center: Point; damaged: number; removed: number; time: number }
 export interface SonarSave { origin: Point; startedAt: number; maxRadius: number }
@@ -68,7 +69,8 @@ export function createSession(options: SessionOptions = {}): Session {
     hopper: site.hopper,
     surfaceY: site.surfaceY,
     seed,
-    options: { seed, caveMemory: options.caveMemory ?? 'remembered', headlamp: options.headlamp ?? 'character', debugVision: options.debugVision ?? false },
+    options: { seed, caveMemory: options.caveMemory ?? 'remembered', headlamp: options.headlamp ?? 'character',
+      debugVision: options.debugVision ?? false, stepHeightCells: options.stepHeightCells ?? DEFAULT_STEP_HEIGHT_CELLS },
     delivered: 0, devCreditAdjustment: 0, time: 0, completed: false,
     initialWater: totalWater(site.world),
     digCooldown: 0, strikeTime: -1, lastStrike: null,
@@ -121,7 +123,9 @@ export function stepSession(session: Session, input: GameInput, dt: number): voi
   if (input.left !== input.right) session.facing = input.right ? 1 : -1;
   stepDigging(session, input, dt);
   stepFallingDirt(session.world, session.fallingDirt, dt);
-  stepPlayer(session.world, session.player, input, dt, { climbSpeed: upgradeStats(session.tank).climbSpeed });
+  stepPlayer(session.world, session.player, input, dt, {
+    climbSpeed: upgradeStats(session.tank).climbSpeed, stepHeightCells: session.options.stepHeightCells,
+  });
   stepWater(session.world, dt);
   const center = playerCenter(session);
   if (input.collecting) collectIntoTank(session.world, session.tank, center, COLLECTION_RADIUS, dt * 36);

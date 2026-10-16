@@ -5,6 +5,7 @@ The demo develops the excavation and water-selling loop into a presentable Steam
 ## Agreed gameplay changes
 
 - Attach to walls only while falling, never during the upward part of a jump. Require hand/torso contact backed by connected wall structure so foot-level ground bumps and isolated terrain cells do not catch the character. Dug faces need not be flat: held grips follow shallow recesses and protrusions using collision-checked horizontal adjustments. Preserve unlimited climbing, air steering, detachment, wall jumping, and protection against immediate reattachment, including getting over the top of a wall.
+- Grounded walking automatically steps up and follows down small terrain changes. Start with a two-cell limit (8 world pixels on the current grid), with a one-cell comparison in the dev panel. Check clearance throughout the step and require supporting ground at the destination. Keep walking grounded on small descents; jumping, airborne movement, larger cliffs, and wall climbing retain their normal physics.
 - Disable digging while attached to a wall initially. A purchased upgrade enables it.
 - Replace continuous excavation with discrete pickaxe strikes. Holding the dig input repeats swings; each impact applies terrain damage, with time between impacts.
 - Give terrain durability so harder material can require several strikes. Keep partial damage when leaving an area or saving.
@@ -98,7 +99,7 @@ These proposals remain available for discussion without being added to the initi
 - Use a distinct attached silhouette with hands gripping the wall and braced legs. Before the wall-dig upgrade the attached model has no wielded pickaxe; afterward it keeps one hand gripping and wields the pickaxe with the other.
 - Add background music and SFX for core actions and feedback.
 - Provide New Game, Save, Load, Continue, pause, and settings. Settings include resolution/window size, windowed/fullscreen mode, audio, and keybindings.
-- Provisional builds include a backtick developer panel with omni vision and a set-credit-balance field. Pause simulation while it is open, preserve tool changes in saves, and keep development credits separate from water delivered. Gate the panel and all visibility overrides behind `VITE_DEV_TOOLS`; release builds disable it. These are testing tools, not public-demo features.
+- Provisional builds include a backtick developer panel with omni vision, a set-credit-balance field, and a one-cell/two-cell walking-step comparison. Pause simulation while it is open, preserve tool changes in saves, and keep development credits separate from water delivered. Gate the panel and all visibility overrides behind `VITE_DEV_TOOLS`; release builds disable it and use the two-cell walking-step default. These are testing tools, not public-demo features.
 
 Proposed production bounds are two terrain materials with different durability, one looping music track, a small core sound set, and one local save slot with autosaving. Save data must include changed terrain and damage, water, inventory, credits, upgrades, exploration, comparison modes, and demo cutoff state.
 
@@ -115,7 +116,7 @@ Artifact placement, artifact signals, and artifact recovery are excluded from th
 
 Continue test-driven development: write a meaningful failing behaviour test, confirm the expected failure, implement the smallest change, then refactor with tests passing. Keep simulation and progression independent of rendering and Electron.
 
-Test falling-only attachment, detachment suppression, the wall-dig purchase restriction, strike timing and damage, fixed digging distance, upgrades, detector behaviour, water conservation during transfer, save/load, comparison-mode restoration, and the delivery cutoff. Test generated sites deterministically against the selected progression requirements.
+Test grounded stepping in both directions, ascent/descent caps, headroom, swept-path collisions, and jumping/airborne exclusions alongside falling-only attachment, detachment suppression, the wall-dig purchase restriction, strike timing and damage, fixed digging distance, upgrades, detector behaviour, water conservation during transfer, save/load, comparison-mode restoration, and the delivery cutoff. Test generated sites deterministically against the selected progression requirements.
 
 Playtest both alternatives in each comparison, including the visible head rotation for mouse aim. Check digging feel, readable darkness, discovery, movement, sound, menus, keybindings, and progression manually. Before finishing implementation changes, run `npm test` and `npm run build`, and playtest control/rendering changes in the browser or Electron.
 
@@ -123,6 +124,6 @@ Playtest both alternatives in each comparison, including the visible head rotati
 
 The first implementation uses a 400-unit cumulative delivery cutoff, 0.48 seconds between pickaxe swings with a 0.12-second wind-up, and 25 water units per second of hopper transfer. Earth durability is 1 and stone durability is 3. All are starting values for playtesting.
 
-Tune the core timings and delivery limit in `src/game/session.ts`, upgrade effects/prices in `src/game/economy.ts`, material durability/reach in `src/game/digging.ts`, wall grip/contour tolerance in `src/game/player.ts`, and lighting/sonar in `src/game/vision.ts`. Held grips currently bridge up to 8 world pixels; ambient lamp suppression is 0.85. New Game exposes both comparison choices; builds with developer tools enabled also expose full visibility and the backtick panel. `npm run build:release` and the `package:*:release` commands use `.env.release` to disable those tools. The current presentation and original synthesized audio are a first pass toward the art brief.
+Tune the core timings and delivery limit in `src/game/session.ts`, upgrade effects/prices in `src/game/economy.ts`, material durability/reach in `src/game/digging.ts`, wall grip/contour tolerance and walking-step height in `src/game/player.ts`, and lighting/sonar in `src/game/vision.ts`. Held grips currently bridge up to 8 world pixels; walking steps default to two terrain cells; ambient lamp suppression is 0.85. New Game exposes the vision/headlamp choices; builds with developer tools enabled also expose full visibility and the backtick panel's live step-height comparison. `npm run build:release` and the `package:*:release` commands use `.env.release` to disable those tools. The current presentation and original synthesized audio are a first pass toward the art brief.
 
 Standalone Windows packaging is available. Native macOS packaging/QA, final balance and art refinement, and the [Steam release preparation](STEAM_DEMO_RELEASE.md) remain before the public demo release.

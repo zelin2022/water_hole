@@ -34,6 +34,20 @@ function corrupt(change: (data: any) => void) {
 }
 
 describe('versioned local saves', () => {
+  it('preserves the walking step comparison and gives earlier v1 saves the two-cell default', () => {
+    const session = createSession({ stepHeightCells: 1 });
+    expect(deserializeSession(serializeSession(session)).options.stepHeightCells).toBe(1);
+    const earlier = JSON.parse(serializeSession(session));
+    delete earlier.session.options.stepHeightCells;
+    expect(deserializeSession(JSON.stringify(earlier)).options.stepHeightCells).toBe(2);
+  });
+
+  it('rejects unsupported walking step heights instead of restoring an unbounded movement setting', () => {
+    for (const stepHeightCells of [null, 0, 3, 1.5, '1']) {
+      expect(() => deserializeSession(corrupt(data => data.session.options.stepHeightCells = stepHeightCells))).toThrow(/comparison options/);
+    }
+  });
+
   it('round-trips repeated credit grants, purchases, reductions and omni vision', () => {
     const session = stockedSession();
     setDevCredits(session, 1000);

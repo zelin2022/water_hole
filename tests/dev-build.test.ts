@@ -33,7 +33,7 @@ describe('developer tools build flag', () => {
     };
     const provisional = await compiledJavaScript('production');
     const release = await compiledJavaScript('release');
-    for (const marker of ['dev-credits-form', 'dev-omni-vision', 'Backquote']) {
+    for (const marker of ['dev-credits-form', 'dev-omni-vision', 'dev-step-height', 'Backquote']) {
       expect(provisional).toContain(marker);
       expect(release).not.toContain(marker);
     }
