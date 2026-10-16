@@ -40,7 +40,7 @@ export function createFeedbackServer({ store, enabled = false, verify = async ()
     try {
       const pathname = new URL(request.url, 'http://localhost').pathname;
       if (request.method === 'GET' && pathname === '/health') return send(200, { ok: true, accepting: enabled });
-      if (request.method === 'GET' && pathname === '/verify' && enabled && /^[A-Za-z0-9_-]{1,128}$/u.test(siteKey)) {
+      if (request.method === 'GET' && pathname === '/verify' && /^[A-Za-z0-9_-]{1,128}$/u.test(siteKey)) {
         response.writeHead(200, { ...headers, 'content-type': 'text/html; charset=utf-8', 'content-security-policy': CSP });
         return response.end(`<!doctype html><html lang="en" data-sitekey="${siteKey}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Water Hole verification</title><link rel="stylesheet" href="/verify.css"><script src="/verify.js" defer></script><script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&amp;onload=waterHoleVerificationReady" defer></script></head><body><div id="challenge"></div><p id="verification-status">Complete the check to send your feedback.</p></body></html>`);
       }

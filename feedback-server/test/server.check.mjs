@@ -52,6 +52,25 @@ test('verification iframe exposes public site key only and validates nonce/actio
     const script=await fetch(`${app.url}/verify.js`);assert.equal(script.status,200);assert.match(await script.text(),/water-hole-feedback-verified/);
   }finally{await app.close();}
 });
+test('configured verification remains testable while submissions stay closed',async()=>{
+  let verificationCalls=0;
+  const app=await fixture({enabled:false,siteKey:'0x-public-key',verify:async()=>{verificationCalls++;return true;}});
+  try{
+    const health=await fetch(`${app.url}/health`);assert.deepEqual(await health.json(),{ok:true,accepting:false});
+    const page=await fetch(`${app.url}/verify`);assert.equal(page.status,200);
+    assert.match(await page.text(),/data-sitekey="0x-public-key"/);
+    assert.match(page.headers.get('content-security-policy'),/default-src 'none'/);
+    assert.equal((await post(app.url)).status,503);
+    const survey=await fetch(`${app.url}/api/surveys`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...payload,rating:5,suggestions:'Test'})});
+    assert.equal(survey.status,503);assert.equal(verificationCalls,0);assert.equal(app.store.list().length,0);
+  }finally{await app.close();}
+});
+test('verification page stays unavailable without a valid public site key',async()=>{
+  for(const siteKey of ['', 'invalid"site-key', 'a'.repeat(129)]){
+    const app=await fixture({enabled:false,siteKey});
+    try{assert.equal((await fetch(`${app.url}/verify`)).status,404);}finally{await app.close();}
+  }
+});
 test('in-flight cap rejects overload before another verification call',async()=>{
   let release;const hold=new Promise(resolve=>{release=resolve;});let entered;
   const ready=new Promise(resolve=>{entered=resolve;});let calls=0;
