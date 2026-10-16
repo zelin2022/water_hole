@@ -34,4 +34,3 @@ export function normalizeSubmission(kind, input) {
   }
   return { ...value, message, screenshot };
 }
-

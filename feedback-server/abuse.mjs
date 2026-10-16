@@ -41,4 +41,3 @@ export async function verifyTurnstile({ secret, hostname, token, ip, action, ide
     return value.success === true && value.hostname === hostname && value.action === action && Number.isFinite(time) && now - time >= -30_000 && now - time <= 300_000;
   } catch { return false; }
 }
-

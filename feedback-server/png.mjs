@@ -59,4 +59,3 @@ export function canonicalPng(bytes) {
   if (encoded.length > MAX_PNG_BYTES) invalid();
   return encoded;
 }
-

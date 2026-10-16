@@ -77,4 +77,3 @@ export function createFeedbackServer({ store, enabled = false, verify = async ()
   server.maxConnections = 32; server.maxHeadersCount = 32; server.maxRequestsPerSocket = 10;
   return server;
 }
-
