@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { createSession, DEMO_DELIVERY_LIMIT } from './session';
+import { createSession, DEMO_DELIVERY_LIMIT, type SessionOptions } from './session';
 import { collectIntoTank, buyUpgrade } from './economy';
 import { totalWater } from './water';
 import { deserializeSession, serializeSession } from './save';
 import { setDevCredits, setOmniVision } from './dev-tools';
 
-function stockedSession() {
-  const session = createSession({ seed: 42, caveMemory: 'sonar', headlamp: 'mouse' });
+function stockedSession(waterDistribution?: SessionOptions['waterDistribution']) {
+  const session = createSession({ seed: 42, caveMemory: 'sonar', headlamp: 'mouse', waterDistribution });
   // Move a ledger-accounted portion of the world water into the machine and tank.
   let available = 100;
   for (let index = 0; index < session.world.water.length && available > 0; index++) {
@@ -119,12 +119,42 @@ describe('versioned local saves', () => {
     }))).toThrow(/upgrade entries/);
   });
 
-  it.each(['many-small', 'fewer-large'] as const)('preserves the %s water distribution with the actual site and water ledger', waterDistribution => {
-    const session = createSession({ seed: 42, caveMemory: 'sonar', waterDistribution });
+  it('round-trips the selected depth-weighted distribution for new expeditions', () => {
+    const session = createSession({ seed: 42 });
     const restored = deserializeSession(serializeSession(session));
-    expect(restored.options.waterDistribution).toBe(waterDistribution);
+    expect(restored.options.waterDistribution).toBe('depth-weighted');
     expect(restored.world.solid).toEqual(session.world.solid);
     expect(restored.world.water).toEqual(session.world.water);
+    expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(restored.initialWater, 5);
+  });
+
+  it('accepts depth-weighted save metadata without regenerating its serialized site', () => {
+    const session = stockedSession();
+    const data = JSON.parse(serializeSession(session));
+    data.session.options.waterDistribution = 'depth-weighted';
+    const restored = deserializeSession(JSON.stringify(data));
+    expect(restored.options.waterDistribution).toBe('depth-weighted');
+    expect(restored.world.solid).toEqual(session.world.solid);
+    expect(restored.world.water).toEqual(session.world.water);
+    expect(restored.tank).toEqual(session.tank);
+    expect(restored.delivered).toBe(session.delivered);
+    expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(restored.initialWater, 5);
+  });
+
+  it.each(['many-small', 'fewer-large'] as const)('preserves legacy %s metadata with its actual site and water ledger', waterDistribution => {
+    const session = stockedSession(waterDistribution);
+    const data = JSON.parse(serializeSession(session));
+    data.session.options.waterDistribution = waterDistribution;
+    const restored = deserializeSession(JSON.stringify(data));
+    expect(restored.options.waterDistribution).toBe(waterDistribution);
+    expect(restored.world.solid).toEqual(session.world.solid);
+    expect(restored.world.material).toEqual(session.world.material);
+    expect(restored.world.damage).toEqual(session.world.damage);
+    expect(restored.world.water).toEqual(session.world.water);
+    expect(restored.tank).toEqual(session.tank);
+    expect(restored.delivered).toBe(session.delivered);
+    expect(restored.player).toEqual(session.player);
+    expect(restored.explored).toEqual(session.explored);
     expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(restored.initialWater, 5);
   });
 

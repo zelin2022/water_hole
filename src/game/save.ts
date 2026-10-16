@@ -76,9 +76,12 @@ export function deserializeSession(json: string): Session {
   const stepHeightCells = state.options.stepHeightCells === undefined ? DEFAULT_STEP_HEIGHT_CELLS : state.options.stepHeightCells;
   assert(stepHeightCells === 1 || stepHeightCells === 2, 'comparison options');
   // Keep earlier v1 worlds and exploration intact, while normalizing retired
-  // cave-memory/headlamp comparisons and missing water-preset metadata.
+  // cave-memory/headlamp comparisons and missing water-preset metadata. An old
+  // site's explicit distribution remains metadata for its serialized layout;
+  // loading must never regenerate that world using the new depth formula.
   const waterDistribution = state.options.waterDistribution === undefined ? 'fewer-large' : state.options.waterDistribution;
-  assert(waterDistribution === 'many-small' || waterDistribution === 'fewer-large', 'comparison options');
+  assert(waterDistribution === 'depth-weighted' || waterDistribution === 'many-small'
+    || waterDistribution === 'fewer-large', 'comparison options');
   assert(finite(state.surfaceY, 0, extentY) && point(state.hopper, extentX, extentY), 'surface or machine');
   assert(finite(state.time) && finite(state.initialWater) && finite(state.delivered, 0, DEMO_DELIVERY_LIMIT), 'progress ledger');
   const devCreditAdjustment = state.devCreditAdjustment === undefined ? 0 : state.devCreditAdjustment;

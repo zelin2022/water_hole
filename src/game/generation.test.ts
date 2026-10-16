@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { generateSite, type WaterDistribution } from './generation';
+import { DEFAULT_WATER_DISTRIBUTION, generateSite, type WaterDistribution } from './generation';
 import type { World } from './world';
 import { createPlayer, stepPlayer } from './player';
-import { totalWater } from './water';
+import { stepWater, totalWater } from './water';
 import { collectWater } from './water';
 import { damageStrike } from './digging';
 
-const distributions: WaterDistribution[] = ['many-small', 'fewer-large'];
+const legacyDistributions: WaterDistribution[] = ['many-small', 'fewer-large'];
+const distributions: WaterDistribution[] = ['depth-weighted', ...legacyDistributions];
 
 function waterBodies(world: World): { mass: number; row: number; cells: number[] }[] {
   const visited = new Set<number>();
@@ -45,6 +46,15 @@ function median(values: number[]): number {
 }
 
 describe('finite seeded sites', () => {
+  it('defaults to three fixed pocket sizes with enough water for the demo', () => {
+    expect(DEFAULT_WATER_DISTRIBUTION).toBe('depth-weighted');
+    const world = generateSite(42).world;
+    const bodies = waterBodies(world);
+    expect(bodies).toHaveLength(28);
+    expect(bodies.every((body) => [45, 90, 180].includes(body.mass))).toBe(true);
+    expect(totalWater(world)).toBeGreaterThanOrEqual(1260);
+  });
+
   it.each(distributions)('reproduces terrain and water for %s, while different seeds change the site', (distribution) => {
     const a = generateSite(42, distribution);
     const b = generateSite(42, distribution);
@@ -62,7 +72,7 @@ describe('finite seeded sites', () => {
     const { world, spawn, hopper, surfaceY } = generateSite(seed, distribution);
     expect(world.width).toBe(384);
     expect(world.height).toBe(256);
-    expect(totalWater(world)).toBeGreaterThanOrEqual(1500);
+    expect(totalWater(world)).toBeGreaterThanOrEqual(distribution === 'depth-weighted' ? 1260 : 1500);
     expect(world.isSolidAtPixel(spawn.x, spawn.y)).toBe(false);
     expect(world.isSolidAtPixel(spawn.x + 15, spawn.y + 31)).toBe(false);
     expect(world.isSolidAtPixel(spawn.x + 8, spawn.y + 32)).toBe(true);
@@ -111,7 +121,7 @@ describe('finite seeded sites', () => {
     }
   });
 
-  it.each(distributions)('increases typical pocket volume with depth while keeping a size mix in %s', (distribution) => {
+  it.each(legacyDistributions)('increases typical pocket volume with depth while keeping a size mix in legacy %s', (distribution) => {
     for (const seed of [0, 42, 999]) {
       const bands = depthBands(generateSite(seed, distribution).world);
       const means = bands.map((bodies) => bodies.reduce((mass, body) => mass + body.mass, 0) / bodies.length);
@@ -123,6 +133,32 @@ describe('finite seeded sites', () => {
         expect(Math.max(...masses) / Math.min(...masses)).toBeGreaterThan(1.4);
       }
     }
+  });
+
+  it('allows every fixed size in the shallow band without forcing all sizes into each site', () => {
+    const shallowSizes = new Set<number>();
+    const totals = new Set<number>();
+    for (let seed = 0; seed < 32; seed++) {
+      const { world } = generateSite(seed);
+      const bodies = waterBodies(world);
+      expect(bodies).toHaveLength(28);
+      for (const body of bodies) {
+        expect([45, 90, 180]).toContain(body.mass);
+        if (body.row < 120) shallowSizes.add(body.mass);
+      }
+      totals.add(totalWater(world));
+    }
+    expect([...shallowSizes].sort((a, b) => a - b)).toEqual([45, 90, 180]);
+    // Independent size draws are not subsequently reweighted to a fixed budget.
+    expect(totals.size).toBeGreaterThan(1);
+  });
+
+  it.each(distributions)('keeps every sealed pocket accounted for after water simulation starts in %s', (distribution) => {
+    const { world } = generateSite(42, distribution);
+    const before = totalWater(world);
+    stepWater(world, 1 / 60);
+    expect(totalWater(world)).toBeCloseTo(before, 10);
+    expect(waterBodies(world)).toHaveLength(distribution === 'fewer-large' ? 16 : 28);
   });
 
   it.each(distributions)('keeps the shared starter pocket small enough to move on after a few loads in %s', (distribution) => {

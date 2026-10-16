@@ -111,8 +111,8 @@ function renderPanel(): void {
       <div class="menu-stack">${hasRun && !session.completed ? button('resume', 'Resume expedition', true) : ''}${button('new', 'New game', !hasRun || session.completed)}${button('load', 'Continue saved game', false, !saved)}${button('settings', 'Settings')}${window.waterHoleDesktop ? button('quit', 'Quit') : ''}</div><p class="small-note">A finite site. A pickaxe. A water exchange.</p>`; break;
     case 'new': el('panel').innerHTML = `${heading('NEW EXPEDITION', 'Choose your site', 'Choose a seed and compare water-pocket layouts. Your choice stays with this save.')}
       <form id="new-form"><label class="setting-row">Site seed<input id="site-seed" type="number" min="0" max="4294967295" step="1" value="${crypto.getRandomValues(new Uint32Array(1))[0]}"></label>
-      <label class="setting-row">Water pockets<select id="water-distribution"><option value="many-small">Many small pockets</option><option value="fewer-large">Fewer large pockets</option></select></label>
-      <p class="small-note">Both sites have the same water supply at each depth. Larger pockets become more common deeper down.</p>
+      <label class="setting-row">Water pockets<select id="water-distribution"><option value="depth-weighted">Three sizes / depth weighted</option><option value="many-small">Legacy / many small</option><option value="fewer-large">Legacy / fewer large</option></select></label>
+      <p class="small-note">The default layout has three pocket sizes at every depth, with larger finds becoming more common deeper down. Legacy layouts remain available for comparison.</p>
       ${DEV_TOOLS_ENABLED ? '<label class="setting-row">Full visibility for testing<input id="debug-vision" type="checkbox"></label>' : ''}
       <div class="panel-actions"><button type="submit" class="primary-button">Begin expedition</button>${button('back-home', 'Back')}</div></form><p class="small-note">A new expedition replaces the single saved game after confirmation.</p>`; break;
     case 'confirm': el('panel').innerHTML = `${heading('START OVER', 'Replace this expedition?', 'Starting a new game replaces your current expedition and saved game.')}<div class="panel-actions">${button('confirm-new', 'Start new expedition', true)}${button('cancel-new', 'Keep current expedition')}</div>`; break;
@@ -276,7 +276,9 @@ function updateHUD(): void {
   el('field-label').textContent = player.wall ? 'WALL ATTACHED' : `DEPTH ${Math.max(0, Math.floor((player.y - session.surfaceY) / 4))} m`;
   el('field-hint').textContent = session.unloading ? 'Unloading into the hopper. Move away or press unload again to stop.' : player.wall && !tank.upgrades.wallDig ? `${keyLabel(settings.bindings.up)} / ${keyLabel(settings.bindings.down)} climb up / down. Jump or move away to detach. A work harness unlocks wall digging.` : tank.water >= tank.capacity - 0.01 ? 'Tank full. Return to the water exchange.' : nearby ? 'Water earns credits here. Buy equipment to improve your next trip.' : 'Hold to strike terrain. Collect exposed water into your tank.';
   const cooldown = Math.max(0, SONAR_COOLDOWN - (session.time - vision.lastSonarAt));
-  el('location').textContent = `SITE ${session.seed} / SONAR EXPLORATION / ${session.options.waterDistribution === 'many-small' ? 'MANY SMALL POCKETS' : 'FEWER LARGE POCKETS'}${tank.upgrades.sonar ? ` / SONAR ${cooldown > 0 ? `${Math.ceil(cooldown)}s` : 'READY'}` : ''}`;
+  const waterLayout = session.options.waterDistribution === 'depth-weighted' ? 'THREE POCKET SIZES'
+    : session.options.waterDistribution === 'many-small' ? 'MANY SMALL POCKETS' : 'FEWER LARGE POCKETS';
+  el('location').textContent = `SITE ${session.seed} / SONAR EXPLORATION / ${waterLayout}${tank.upgrades.sonar ? ` / SONAR ${cooldown > 0 ? `${Math.ceil(cooldown)}s` : 'READY'}` : ''}`;
   el('field-hint').hidden = !hasRun || screen === 'ended';
 }
 function tick(time: number): void {

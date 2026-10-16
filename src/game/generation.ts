@@ -1,16 +1,17 @@
 import { World, type Point } from './world';
+import { sampleWaterPocketVolume } from './water-pockets';
 
-export type WaterDistribution = 'many-small' | 'fewer-large';
-export const DEFAULT_WATER_DISTRIBUTION: WaterDistribution = 'many-small';
+export type WaterDistribution = 'depth-weighted' | 'many-small' | 'fewer-large';
+export const DEFAULT_WATER_DISTRIBUTION: WaterDistribution = 'depth-weighted';
 
 interface ReservoirBand {
   slots: readonly (readonly [number, number])[];
-  masses: Record<WaterDistribution, readonly number[]>;
+  masses: Record<Exclude<WaterDistribution, 'depth-weighted'>, readonly number[]>;
 }
 
-// Keep the same water budget in each depth band while changing how often a
-// worker finds another pocket. Values are provisional playtest tuning in units
-// of water, not tank loads; each band retains small and large finds.
+// The two legacy comparisons retain their previous maps and equal depth-band
+// budgets. The new default reuses the many-small locations but samples one of
+// three fixed volumes at every depth, without quotas or budget conditioning.
 const RESERVOIR_BANDS: readonly ReservoirBand[] = [
   {
     slots: [[140, 101], [140, 73], [210, 73], [275, 73], [345, 73], [210, 101], [275, 101], [345, 101]],
@@ -82,12 +83,24 @@ export function generateSite(seed: number, distribution: WaterDistribution = DEF
   // player switches distributions for the same seed.
   const reservoirRandom = seededRandom(seed ^ 0x57a7e2);
   for (const [bandIndex, band] of RESERVOIR_BANDS.entries()) {
-    const masses = varyMasses(band.masses[distribution], reservoirRandom);
+    const masses = distribution === 'depth-weighted'
+      ? null : varyMasses(band.masses[distribution], reservoirRandom);
     // Both comparisons guarantee a second find close to the starter pocket.
     const slots = bandIndex === 0
       ? [band.slots[0]!, ...shuffle(band.slots.slice(1), reservoirRandom)]
       : shuffle(band.slots, reservoirRandom);
-    for (const [index, mass] of shuffle(masses, reservoirRandom).entries()) {
+    if (distribution === 'depth-weighted') {
+      for (const [column, row] of slots.slice(0, band.masses['many-small'].length)) {
+        const cx = column + Math.floor(reservoirRandom() * 9) - 4;
+        const cy = row + Math.floor(reservoirRandom() * 7) - 3;
+        // One terrain row is one HUD metre; world pixels would exaggerate
+        // the depth bias by the four-pixel cell size.
+        const mass = sampleWaterPocketVolume(cy - surfaceRow, reservoirRandom());
+        carveReservoir(world, cx, cy, mass);
+      }
+      continue;
+    }
+    for (const [index, mass] of shuffle(masses!, reservoirRandom).entries()) {
       const [column, row] = slots[index]!;
       const cx = column + Math.floor(reservoirRandom() * 9) - 4;
       const cy = row + Math.floor(reservoirRandom() * 7) - 3;

@@ -24,7 +24,9 @@ Open the local URL Vite prints. Run `npm run desktop:dev` in a second terminal t
 
 ## Playtest options
 
-New Game offers a comparison between many small and fewer large water pockets. Both distributions share the same water budget at each depth: small pockets are common near the surface, with larger pockets increasingly common deeper down. The seed and selected distribution reproduce the finite site; the choice is retained by save/load. Provisional builds also offer a full-visibility checkbox for testing.
+New Game defaults to **Three sizes / depth weighted**: small, medium, and large pockets hold 45, 90, and 180 water. All three can appear at any depth. Their frequency weights are `r² : r : 1`, where `r = 3 × 0.9^((d − 50) / 100)` and `d` uses the HUD's depth units. At depth 50 this gives approximately 69% small, 23% medium, and 8% large pockets. Larger finds become a little more common deeper down. The accessible starter is always small; other pockets are sampled independently, so the total water varies by seed.
+
+The earlier many-small and fewer-large layouts remain selectable as **legacy comparisons**. Those two layouts retain their matched water budgets. The seed and selected layout reproduce the finite site, and save/load preserves the choice and actual world. Existing saved maps keep their original pockets. Provisional builds also offer a full-visibility checkbox for testing.
 
 Dark caves with temporary sonar outlines are now the standard. Explored caves become completely dark outside current illumination and active scan echoes. The headlamp follows mouse aim, and the worker's head visibly rotates with it. Older saves adopt these selected modes while keeping their terrain, water, equipment, and progress.
 

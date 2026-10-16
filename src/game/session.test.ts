@@ -38,8 +38,8 @@ describe('demo session', () => {
     expect(session.tank.upgrades).toMatchObject({ sonar: 0, subsurfaceScanner: 0 });
   });
 
-  it('defaults to dark caves with sonar outlines, many small pockets and the mouse-aimed headlamp', () => {
-    expect(createSession().options).toMatchObject({ caveMemory: 'sonar', waterDistribution: 'many-small', headlamp: 'mouse' });
+  it('defaults to dark caves with sonar outlines, depth-weighted pockets and the mouse-aimed headlamp', () => {
+    expect(createSession().options).toMatchObject({ caveMemory: 'sonar', waterDistribution: 'depth-weighted', headlamp: 'mouse' });
   });
 
   it('normalizes a retired cave-memory option from a legacy JavaScript caller to dark caves', () => {
@@ -47,13 +47,15 @@ describe('demo session', () => {
     expect(createSession(legacyOptions).options.caveMemory).toBe('sonar');
   });
 
-  it('creates distinct reproducible pocket distributions and starts both with an accounted water ledger', () => {
+  it('keeps the two legacy pocket comparisons selectable and reproducible alongside the new default', () => {
     const many = createSession({ seed: 42, waterDistribution: 'many-small' });
     const fewer = createSession({ seed: 42, waterDistribution: 'fewer-large' });
+    const selected = createSession({ seed: 42 });
     expect(many.options.waterDistribution).toBe('many-small');
     expect(fewer.options.waterDistribution).toBe('fewer-large');
+    expect(selected.options.waterDistribution).toBe('depth-weighted');
     expect(many.world.water).not.toEqual(fewer.world.water);
-    for (const session of [many, fewer]) {
+    for (const session of [many, fewer, selected]) {
       const repeated = createSession({ seed: 42, waterDistribution: session.options.waterDistribution });
       expect(repeated.world.solid).toEqual(session.world.solid);
       expect(repeated.world.water).toEqual(session.world.water);

@@ -16,11 +16,11 @@ The demo develops the excavation and water-selling loop into a presentable Steam
 
 ## Water-pocket comparison
 
-Keep many-small and fewer-large water distributions selectable before starting a playtest, and preserve the chosen layout in saves. The final public-demo distribution remains subject to playtesting.
+Default new expeditions to the three-size depth-weighted distribution. Keep the earlier many-small and fewer-large layouts selectable as labeled legacy comparisons, and preserve the chosen layout in saves. The final public-demo distribution remains subject to playtesting.
 
 | Comparison | Alternative A | Alternative B |
 | --- | --- | --- |
-| Water pockets | Many small pockets create more separate discoveries. | Fewer large pockets provide more water per discovery. |
+| Legacy water layouts | Many small pockets create more separate discoveries. | Fewer large pockets provide more water per discovery. |
 
 Dark caves with temporary sonar outlines are the selected vision mode. A small light around the character and a mouse-aimed headlamp illuminate the immediate working area. Outside illumination and active echoes, all cave outlines stay dark, including previously explored ones. Solid terrain conceals water. Cave sonar is a navigation tool: its wave travels through connected open space, follows tunnels around bends, and briefly traces adjacent wall outlines. Terrain blocks propagation, including diagonal corner gaps. Sealed cavities and water pockets remain hidden. It works on the current cave geometry without permanently exploring or illuminating it.
 
@@ -28,9 +28,33 @@ Retain the original penetrating radial scan as the **Subsurface scanner**, a sep
 
 The headlamp comparison is also resolved: the lamp follows mouse aim and the visible head rotates with that aim. Remove both vision comparison selectors. Continue/load preserves the pocket distribution; older saves adopt dark caves and mouse-aimed lamps while retaining their world, exploration data, equipment, and progress. Keep a development-only full-visibility option for testing.
 
-### Depth-based water pockets
+### Three-size depth-weighted pockets
 
-Both distributions use a small guaranteed starter pocket beside the shaft. Near the surface, small pockets are common; larger pockets become increasingly common deeper down. Keep size variation within each depth band. Give both presets the same water budget at each depth so discovery frequency and water per discovery can be compared without adding extra income to one preset. Keep the shallow supply below the demo cutoff to encourage deeper exploration. These are provisional pacing values, not final balance.
+The default layout uses three fixed water volumes: small 45, medium 90, and large 180. Every procedural pocket can be any of these sizes at any depth; equipment does not unlock size classes. Only the accessible starter pocket is fixed at 45 water.
+
+At depth `d`, use the same frequency ratio between adjacent size classes:
+
+```text
+r(d) = 3 * 0.9^((d - 50) / 100)
+small / medium = medium / large = r(d)
+small : medium : large = r(d)^2 : r(d) : 1
+```
+
+Normalize those weights before sampling each pocket independently. Depth uses the HUD's metres: pocket centre row minus the starter surface row (44), rather than world pixels. The finite map has 28 pockets including the starter, providing at least 1,260 water. The total varies by seed; do not condition draws on a water budget or force a size into each depth band, which would change the requested odds.
+
+| Depth | Small chance | Medium chance | Large chance |
+| --- | --- | --- | --- |
+| 0 | 70.6% | 22.3% | 7.1% |
+| 50 | 69.2% | 23.1% | 7.7% |
+| 200 | 64.8% | 25.3% | 9.9% |
+
+The curve produces a gentle shift over the current map's roughly 210-metre depth. All sizes are possible in shallow ground; a particular seed need not contain all three shallow sizes. Keep the starter route and nearby second pocket accessible, and preserve sealed separation from caves, other pockets, and boundaries. These initial volumes remain tunable.
+
+Pacing consequence: the eight shallow pockets hold at least 360 water; one medium or large shallow draw raises this to at least 405. Most seeds therefore have enough shallow water to reach the current 400-water demo cutoff. Tune pocket density or the cutoff after playtesting rather than altering the requested size probabilities to enforce a budget.
+
+### Legacy depth-band comparisons
+
+The two earlier comparison layouts retain their original volume variation and identical water budget at each depth. Their shallow supply stays below the demo cutoff to encourage deeper exploration. They are benchmarks for playtesting the new formula, with provisional pacing values.
 
 | Depth band | Many small: pocket count | Fewer large: pocket count | Water in either preset |
 | --- | --- | --- | --- |
@@ -39,7 +63,7 @@ Both distributions use a small guaranteed starter pocket beside the shaft. Near 
 | Deep | 10 | 7 | 1,100 |
 | Total | 28 | 16 | 1,940 |
 
-Bands use pocket centre rows below 120, 120–184, and 185 onward on the 256-row map. Seeded variation changes individual volumes and positions while preserving each band's budget. The next shallow pocket is near the starter in both presets. The new layouts apply to new expeditions; loading an earlier save keeps its existing pockets.
+These legacy bands use pocket centre rows below 120, 120–184, and 185 onward on the 256-row map. Seeded variation changes individual volumes and positions while preserving each band's budget. The next shallow pocket is near the starter in both presets. Layout changes apply to new expeditions; loading an earlier save keeps its existing pockets.
 
 ### Sonar timing
 
@@ -133,12 +157,12 @@ Continue test-driven development: write a meaningful failing behaviour test, con
 
 Test grounded stepping in both directions, ascent/descent caps, headroom, swept-path collisions, and jumping/airborne exclusions alongside falling-only attachment, detachment suppression, the wall-dig purchase restriction, strike timing and damage, fixed digging distance, upgrades, detector behaviour, water conservation during transfer, save/load, comparison-mode restoration, and the delivery cutoff. Test generated sites deterministically across seeds and both distributions: accessible starter water, separated bodies, depth-based volume variation, comparable budgets, and enough water for the demo. Test sonar around bends, sealed pockets, both faces of thin walls, diagonal gaps, excavation changes, timing/fade and cooldown. Verify the retained scanner penetrates independently while its purchase stays hidden. Preserve legacy saved worlds and equipment when adding new options or items.
 
-Playtest both water-pocket distributions, including selection and save/load restoration. Check that explored unlit caves stay dark before and after sonar fades, including when loading an older remembered-outline save. Check mouse-aimed lighting and visible head rotation, digging feel, readable darkness, discovery, movement, sound, menus, keybindings, and progression manually. Before finishing implementation changes, run `npm test` and `npm run build`, and playtest control/rendering changes in the browser or Electron.
+Test the formula's adjacent ratios, normalized probabilities, sampling thresholds, and aggregate generated-pocket frequencies. Verify the default map uses only the three allowed volumes and preserves water after liquid stepping. Playtest the new default and both legacy layouts, including selection and save/load restoration. Check that explored unlit caves stay dark before and after sonar fades, including when loading an older remembered-outline save. Check mouse-aimed lighting and visible head rotation, digging feel, readable darkness, discovery, movement, sound, menus, keybindings, and progression manually. Before finishing implementation changes, run `npm test` and `npm run build`, and playtest control/rendering changes in the browser or Electron.
 
 ## Provisional build tuning
 
 The first implementation uses a 400-unit cumulative delivery cutoff, 0.48 seconds between pickaxe swings with a 0.12-second wind-up, and 25 water units per second of hopper transfer. Earth durability is 1 and stone durability is 3. All are starting values for playtesting.
 
-Tune the core timings and delivery limit in `src/game/session.ts`, water-pocket budgets and sizes in `src/game/generation.ts`, upgrade effects/prices in `src/game/economy.ts`, material durability/reach in `src/game/digging.ts`, wall grip/contour tolerance and walking-step height in `src/game/player.ts`, and lighting/sonar in `src/game/vision.ts`. Held grips currently bridge up to 8 world pixels; walking steps default to two terrain cells; ambient lamp suppression is 0.85. New Game exposes the water-distribution choice; builds with developer tools enabled also expose full visibility and the backtick panel's live step-height comparison. `npm run build:release` and the `package:*:release` commands use `.env.release` to disable those tools. The current presentation and original synthesized audio are a first pass toward the art brief.
+Tune the core timings and delivery limit in `src/game/session.ts`, three-size volumes/probabilities in `src/game/water-pockets.ts`, reservoir placement and legacy budgets in `src/game/generation.ts`, upgrade effects/prices in `src/game/economy.ts`, material durability/reach in `src/game/digging.ts`, wall grip/contour tolerance and walking-step height in `src/game/player.ts`, and lighting/sonar in `src/game/vision.ts`. Held grips currently bridge up to 8 world pixels; walking steps default to two terrain cells; ambient lamp suppression is 0.85. New Game exposes the water-distribution choice; builds with developer tools enabled also expose full visibility and the backtick panel's live step-height comparison. `npm run build:release` and the `package:*:release` commands use `.env.release` to disable those tools. The current presentation and original synthesized audio are a first pass toward the art brief.
 
 Standalone Windows packaging is available. Native macOS packaging/QA, final balance and art refinement, and the [Steam release preparation](STEAM_DEMO_RELEASE.md) remain before the public demo release.
