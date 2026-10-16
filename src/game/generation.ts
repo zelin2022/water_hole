@@ -11,7 +11,7 @@ interface ReservoirBand {
 
 // The two legacy comparisons retain their previous maps and equal depth-band
 // budgets. The new default reuses the many-small locations but samples one of
-// three fixed volumes at every depth, without quotas or budget conditioning.
+// three variable-volume classes at every depth, without quotas or budget conditioning.
 const RESERVOIR_BANDS: readonly ReservoirBand[] = [
   {
     slots: [[140, 101], [140, 73], [210, 73], [275, 73], [345, 73], [210, 101], [275, 101], [345, 101]],
@@ -70,7 +70,16 @@ export function generateSite(seed: number, distribution: WaterDistribution = DEF
   for (let y = 90; y < 112; y++) {
     for (let x = 106; x < 129; x++) world.setMaterial(x, y, 1);
   }
-  carveEllipse(world, 112, 102, 5, 3, true);
+  if (distribution === 'depth-weighted') {
+    // Vary the tutorial pocket without consuming the geology or later-pocket
+    // streams. Anchor its near wall and floor so every volume is reachable
+    // with the initial pickaxe and remains sealed beside the starter shaft.
+    const starterRandom = seededRandom(seed ^ 0x5a27e2);
+    const mass = sampleWaterPocketVolume(102 - surfaceRow, 0, starterRandom());
+    carveReservoir(world, 112, 102, mass, { left: 107, bottom: 105 });
+  } else {
+    carveEllipse(world, 112, 102, 5, 3, true);
+  }
 
   // Air-filled caves diversify excavation without creating fragile overhangs on
   // the starter shaft. These stay clear of reservoir placement bands.
@@ -95,7 +104,7 @@ export function generateSite(seed: number, distribution: WaterDistribution = DEF
         const cy = row + Math.floor(reservoirRandom() * 7) - 3;
         // One terrain row is one HUD metre; world pixels would exaggerate
         // the depth bias by the four-pixel cell size.
-        const mass = sampleWaterPocketVolume(cy - surfaceRow, reservoirRandom());
+        const mass = sampleWaterPocketVolume(cy - surfaceRow, reservoirRandom(), reservoirRandom());
         carveReservoir(world, cx, cy, mass);
       }
       continue;
@@ -116,7 +125,8 @@ export function generateSite(seed: number, distribution: WaterDistribution = DEF
   };
 }
 
-function carveReservoir(world: World, cx: number, cy: number, mass: number): void {
+function carveReservoir(world: World, cx: number, cy: number, mass: number,
+  anchor?: { left: number; bottom: number }): void {
   // Select the closest cells in elliptical distance, rather than filling a
   // rounded ellipse with a variable volume. Every chosen cell has a neighbor
   // closer to the center, so the pocket stays connected and holds exactly its
@@ -132,6 +142,14 @@ function carveReservoir(world: World, cx: number, cy: number, mass: number): voi
   }
   candidates.sort((a, b) => a.distance - b.distance);
   const cells = candidates.slice(0, mass);
+  if (anchor) {
+    const offsetX = anchor.left - Math.min(...cells.map((cell) => cell.x));
+    const offsetY = anchor.bottom - Math.max(...cells.map((cell) => cell.y));
+    for (const cell of cells) {
+      cell.x += offsetX;
+      cell.y += offsetY;
+    }
+  }
   // Placement bands provide several terrain cells of separation from caves,
   // the boundary and other pockets. Guard the invariant if tuning moves them.
   for (const { x, y } of cells) {

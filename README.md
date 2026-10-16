@@ -24,7 +24,7 @@ Open the local URL Vite prints. Run `npm run desktop:dev` in a second terminal t
 
 ## Playtest options
 
-New Game defaults to **Three sizes / depth weighted**: small, medium, and large pockets hold 45, 90, and 180 water. All three can appear at any depth. Their frequency weights are `r² : r : 1`, where `r = 3 × 0.9^((d − 50) / 100)` and `d` uses the HUD's depth units. At depth 50 this gives approximately 69% small, 23% medium, and 8% large pockets. Larger finds become a little more common deeper down. The accessible starter is always small; other pockets are sampled independently, so the total water varies by seed.
+New Game defaults to **Three sizes / depth weighted**: small pockets hold **30–60** water, medium **60–120**, and large **120–240** (45/90/180 with ±15/30/60 variation). All three classes can appear at any depth. Their frequency weights are `r² : r : 1`, where `r = 3 × 0.9^((d − 50) / 100)` and `d` uses the HUD's depth units. At depth 50 this gives approximately 69% small, 23% medium, and 8% large pockets. Each volume is sampled uniformly as a whole number within its class, independently of the class choice. Larger finds become a little more common deeper down. The accessible starter is always small and also varies in volume; the total water varies by seed.
 
 The earlier many-small and fewer-large layouts remain selectable as **legacy comparisons**. Those two layouts retain their matched water budgets. The seed and selected layout reproduce the finite site, and save/load preserves the choice and actual world. Existing saved maps keep their original pockets. Provisional builds also offer a full-visibility checkbox for testing.
 

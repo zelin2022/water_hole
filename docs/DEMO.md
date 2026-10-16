@@ -30,7 +30,15 @@ The headlamp comparison is also resolved: the lamp follows mouse aim and the vis
 
 ### Three-size depth-weighted pockets
 
-The default layout uses three fixed water volumes: small 45, medium 90, and large 180. Every procedural pocket can be any of these sizes at any depth; equipment does not unlock size classes. Only the accessible starter pocket is fixed at 45 water.
+The default layout uses three size classes with variable water volumes:
+
+| Class | Nominal volume | Variation | Inclusive range |
+| --- | --- | --- | --- |
+| Small | 45 | ±15 | 30–60 |
+| Medium | 90 | ±30 | 60–120 |
+| Large | 180 | ±60 | 120–240 |
+
+Every procedural pocket can be any class at any depth; equipment does not unlock classes. Sample its volume uniformly as an integer within the selected range, using a separate random draw from the class selection. The accessible starter is always small and also varies from 30 to 60 water; keep its left edge and floor alignment fixed so the initial tool can always reach it. The touching endpoints 60 and 120 can belong to either adjacent class.
 
 At depth `d`, use the same frequency ratio between adjacent size classes:
 
@@ -40,7 +48,7 @@ small / medium = medium / large = r(d)
 small : medium : large = r(d)^2 : r(d) : 1
 ```
 
-Normalize those weights before sampling each pocket independently. Depth uses the HUD's metres: pocket centre row minus the starter surface row (44), rather than world pixels. The finite map has 28 pockets including the starter, providing at least 1,260 water. The total varies by seed; do not condition draws on a water budget or force a size into each depth band, which would change the requested odds.
+Normalize those weights before sampling each pocket independently. Depth uses the HUD's metres: pocket centre row minus the starter surface row (44), rather than world pixels. The finite map has 28 pockets including the starter, providing at least 840 water. The total varies by seed; do not condition draws on a water budget or force a size into each depth band, which would change the requested odds.
 
 | Depth | Small chance | Medium chance | Large chance |
 | --- | --- | --- | --- |
@@ -50,7 +58,7 @@ Normalize those weights before sampling each pocket independently. Depth uses th
 
 The curve produces a gentle shift over the current map's roughly 210-metre depth. All sizes are possible in shallow ground; a particular seed need not contain all three shallow sizes. Keep the starter route and nearby second pocket accessible, and preserve sealed separation from caves, other pockets, and boundaries. These initial volumes remain tunable.
 
-Pacing consequence: the eight shallow pockets hold at least 360 water; one medium or large shallow draw raises this to at least 405. Most seeds therefore have enough shallow water to reach the current 400-water demo cutoff. Tune pocket density or the cutoff after playtesting rather than altering the requested size probabilities to enforce a budget.
+Shallow water supply now varies with both class draws and volume variation. Tune pocket density or the demo cutoff after playtesting rather than altering the requested class probabilities to enforce a budget.
 
 ### Legacy depth-band comparisons
 
@@ -157,7 +165,7 @@ Continue test-driven development: write a meaningful failing behaviour test, con
 
 Test grounded stepping in both directions, ascent/descent caps, headroom, swept-path collisions, and jumping/airborne exclusions alongside falling-only attachment, detachment suppression, the wall-dig purchase restriction, strike timing and damage, fixed digging distance, upgrades, detector behaviour, water conservation during transfer, save/load, comparison-mode restoration, and the delivery cutoff. Test generated sites deterministically across seeds and both distributions: accessible starter water, separated bodies, depth-based volume variation, comparable budgets, and enough water for the demo. Test sonar around bends, sealed pockets, both faces of thin walls, diagonal gaps, excavation changes, timing/fade and cooldown. Verify the retained scanner penetrates independently while its purchase stays hidden. Preserve legacy saved worlds and equipment when adding new options or items.
 
-Test the formula's adjacent ratios, normalized probabilities, sampling thresholds, and aggregate generated-pocket frequencies. Verify the default map uses only the three allowed volumes and preserves water after liquid stepping. Playtest the new default and both legacy layouts, including selection and save/load restoration. Check that explored unlit caves stay dark before and after sonar fades, including when loading an older remembered-outline save. Check mouse-aimed lighting and visible head rotation, digging feel, readable darkness, discovery, movement, sound, menus, keybindings, and progression manually. Before finishing implementation changes, run `npm test` and `npm run build`, and playtest control/rendering changes in the browser or Electron.
+Test the formula's adjacent ratios, normalized probabilities, sampling thresholds, and aggregate generated-pocket frequencies. Verify independent volume variation, inclusive class bounds, varying starter volumes with reliable initial reach, separation of maximum 240-unit pockets, and water conservation after liquid stepping. Playtest the new default and both legacy layouts, including selection and save/load restoration. Check that explored unlit caves stay dark before and after sonar fades, including when loading an older remembered-outline save. Check mouse-aimed lighting and visible head rotation, digging feel, readable darkness, discovery, movement, sound, menus, keybindings, and progression manually. Before finishing implementation changes, run `npm test` and `npm run build`, and playtest control/rendering changes in the browser or Electron.
 
 ## Provisional build tuning
 
