@@ -31,6 +31,23 @@ function rightAttached() {
   return { world, player };
 }
 
+/** A connected excavated face with isolated teeth and two-cell recesses/ledges. */
+function roughWall(world: World, side: -1 | 1): void {
+  for (let y = 5; y < 50; y++) {
+    const offset = y >= 18 && y < 25 ? 2 : y >= 32 && y < 39 ? -2 : y % 2;
+    const face = 30 + side * offset;
+    for (let x = side < 0 ? 1 : face; x <= (side < 0 ? face : 78); x++) world.setSolid(x, y, true);
+  }
+}
+
+function expectOutsideTerrain(world: World, player: ReturnType<typeof createPlayer>): void {
+  for (let y = Math.floor(player.y / 4); y <= Math.floor((player.y + player.height - 0.001) / 4); y++) {
+    for (let x = Math.floor(player.x / 4); x <= Math.floor((player.x + player.width - 0.001) / 4); x++) {
+      expect(world.isSolid(x, y), `Player overlaps terrain at ${x},${y}`).toBe(false);
+    }
+  }
+}
+
 describe('player movement', () => {
   it('creates the specified player dimensions', () => {
     const player = createPlayer(80, 168);
@@ -142,6 +159,68 @@ describe('player movement', () => {
     tick(world, player);
     expect(player.wall).toBe(0);
     expect(player.vy).toBeGreaterThan(0);
+  });
+
+  it.each([-1, 1] as const)('grips connected teeth on an uneven wall on side %s', side => {
+    const world = room();
+    roughWall(world, side);
+    const player = createPlayer(side < 0 ? 124 : 104, 92);
+    tick(world, player);
+    expect(player.wall).toBe(side);
+    expect(player.vy).toBe(0);
+  });
+
+  it.each([-1, 1] as const)('climbs up and down over recesses and protrusions on side %s', side => {
+    const world = room();
+    roughWall(world, side);
+    const player = createPlayer(side < 0 ? 124 : 104, 92);
+    tick(world, player);
+    expect(player.wall).toBe(side);
+    for (let i = 0; i < 64; i++) {
+      tick(world, player, { up: true });
+      expect(player.wall).toBe(side);
+      expectOutsideTerrain(world, player);
+    }
+    expect(player.y).toBeLessThan(36);
+    for (let i = 0; i < 124; i++) {
+      tick(world, player, { down: true });
+      expect(player.wall).toBe(side);
+      expectOutsideTerrain(world, player);
+    }
+    expect(player.y).toBeGreaterThan(154);
+  });
+
+  it.each([-1, 1] as const)('does not catch a floor-connected bump at the feet on side %s', side => {
+    const world = room();
+    for (let y = 39; y < 50; y++) world.setSolid(30, y, true);
+    const player = createPlayer(side < 0 ? 124 : 104, 136);
+    tick(world, player);
+    expect(player.wall).toBe(0);
+    expect(player.vy).toBeGreaterThan(0);
+  });
+
+  it.each([-1, 1] as const)('requires actual side contact before reaching toward a recessed wall on side %s', side => {
+    const world = room();
+    wall(world, 30);
+    const player = createPlayer(side < 0 ? 128 : 100, 100);
+    tick(world, player);
+    expect(player.wall).toBe(0);
+    expect(player.vy).toBeGreaterThan(0);
+  });
+
+  it.each([-1, 1] as const)('releases a held grip when its wall recedes beyond reach on side %s', side => {
+    const world = room();
+    wall(world, 30);
+    const player = createPlayer(side < 0 ? 124 : 104, 100);
+    tick(world, player);
+    expect(player.wall).toBe(side);
+    for (let y = 1; y < 50; y++) {
+      world.setSolid(30, y, false);
+      world.setSolid(30 + side * 3, y, true);
+    }
+    tick(world, player, { up: true });
+    expect(player.wall).toBe(0);
+    expect(player.x).toBe(side < 0 ? 124 : 104);
   });
 
   it('requires enough supporting wall to overlap the body, not just exist nearby', () => {

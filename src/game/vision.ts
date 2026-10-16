@@ -10,6 +10,9 @@ export const HEADLAMP_HALF_ANGLE = Math.PI / 5;
 export const DAYLIGHT_FALLOFF_DISTANCE = 64;
 export const DAYLIGHT_SURFACE_SAMPLE_RADIUS = 96;
 export const MINIMUM_VISIBLE_LIGHT = 0.025;
+// Kept below the weakest moon colour channel (220 / 255), so moving into
+// brighter ambient light never makes any rendered colour channel darker.
+export const LAMP_AMBIENT_SUPPRESSION = 0.85;
 
 const daylightCache = new WeakMap<World, { version: number; field: Float32Array }>();
 
@@ -169,6 +172,11 @@ function hasLineOfSight(world: World, origin: Point, targetX: number, targetY: n
   return true;
 }
 
+/** Dim each illuminated target locally, preserving a beam into a dark tunnel. */
+export function dimLamplight(strength: number, ambient: number): number {
+  return Math.max(0, strength - ambient * LAMP_AMBIENT_SUPPRESSION);
+}
+
 export function updateVision(world: World, state: VisionState, input: VisionInput): void {
   state.daylight = computeDaylight(world);
   state.moonlight.set(state.daylight);
@@ -209,7 +217,7 @@ export function updateVision(world: World, state: VisionState, input: VisionInpu
         strength = Math.max(strength, Math.pow(1 - distance / beamRange, 0.55) * edgeFade);
       }
       const index = world.index(x, y);
-      state.lamplight[index] = strength;
+      state.lamplight[index] = dimLamplight(strength, state.moonlight[index]);
     }
   }
   for (let index = 0; index < state.visible.length; index++) {

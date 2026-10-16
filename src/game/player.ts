@@ -33,6 +33,9 @@ const JUMP_SPEED = 275;
 const MAX_FALL_SPEED = 420;
 // Small leftover cells collide normally, but cannot hold the character in a climbing state.
 export const MIN_WALL_CONTACT = 12;
+// A held grip can bridge two terrain cells and follow equally small outward ledges.
+export const WALL_CONTOUR_REACH = 8;
+const WALL_STRUCTURE_DEPTH = 12;
 
 /** Small collision steps keep even a delayed frame from skipping thin terrain. */
 export function stepPlayer(world: World, player: Player, input: PlayerInput, dt: number, options: { climbSpeed?: number } = {}): void {
@@ -51,7 +54,7 @@ function updatePlayer(world: World, player: Player, input: PlayerInput, dt: numb
   if (player.suppressedWall && !touchesWall(world, player, player.suppressedWall)) {
     player.suppressedWall = 0;
   }
-  if (player.wall && (!hasClimbingSupport(world, player, player.wall) || player.grounded)) {
+  if (player.wall && !hasClimbingSupport(world, player, player.wall, WALL_CONTOUR_REACH)) {
     player.wall = 0;
     player.vy = 0;
   }
@@ -74,8 +77,9 @@ function updatePlayer(world: World, player: Player, input: PlayerInput, dt: numb
   if (player.wall) {
     player.vx = 0;
     player.vy = (Number(input.down) - Number(input.up)) * climbSpeed;
-    moveVertical(world, player, player.vy * dt);
-    if (player.grounded || !hasClimbingSupport(world, player, player.wall)) {
+    player.grounded = false;
+    moveAlongWall(world, player, player.vy * dt);
+    if (player.grounded || !hasClimbingSupport(world, player, player.wall, WALL_CONTOUR_REACH)) {
       // Finish the last few pixels of an upward climb over a lip. This remains
       // normal airborne motion with collision checks, rather than snapping onto terrain.
       if (!player.grounded && player.vy < 0) {
@@ -125,21 +129,76 @@ function touchesWall(world: World, player: Player, side: -1 | 1): boolean {
   return false;
 }
 
-function hasClimbingSupport(world: World, player: Player, side: -1 | 1): boolean {
+function hasClimbingSupport(world: World, player: Player, side: -1 | 1, reach = 0): boolean {
   const size = world.cellSize;
   const cellX = Math.floor((side < 0 ? player.x - EPSILON : player.x + player.width + EPSILON) / size);
   const minY = Math.floor((player.y + EPSILON) / size);
   const maxY = Math.floor((player.y + player.height - EPSILON) / size);
-  let contiguousContact = 0;
+  const depth = Math.ceil((reach + WALL_STRUCTURE_DEPTH) / size);
+  const minX = side < 0 ? cellX - depth : cellX;
+  const maxX = side < 0 ? cellX : cellX + depth;
+  const visited = new Set<number>();
   for (let y = minY; y <= maxY; y++) {
-    if (!world.isSolid(cellX, y)) {
-      contiguousContact = 0;
-      continue;
+    // Contact at the boots alone is a bump, rather than a handhold. Once held,
+    // allow the hands to reach across a shallow recess in an excavated face.
+    const handOverlap = Math.min((y + 1) * size, player.y + 20) - Math.max(y * size, player.y + 4);
+    if (handOverlap < Math.min(2, size) - EPSILON) continue;
+    for (let x = cellX; side < 0 ? x >= minX : x <= maxX; x += side) {
+      const gap = side < 0 ? player.x - (x + 1) * size : x * size - player.x - player.width;
+      if (gap > reach + EPSILON) break;
+      if (!world.isSolid(x, y) || visited.has(world.index(x, y))) continue;
+      const queue = [{ x, y }];
+      const rows = new Set<number>();
+      visited.add(world.index(x, y));
+      for (let i = 0; i < queue.length; i++) {
+        const cell = queue[i];
+        rows.add(cell.y);
+        for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+          const nx = cell.x + dx;
+          const ny = cell.y + dy;
+          if (nx < minX || nx > maxX || ny < minY || ny > maxY || !world.isSolid(nx, ny)) continue;
+          const index = world.index(nx, ny);
+          if (visited.has(index)) continue;
+          visited.add(index);
+          queue.push({ x: nx, y: ny });
+        }
+      }
+      let support = 0;
+      for (const row of rows) support += Math.min(player.y + player.height, (row + 1) * size) - Math.max(player.y, row * size);
+      if (support >= MIN_WALL_CONTACT - EPSILON) return true;
     }
-    contiguousContact += Math.min(player.y + player.height, (y + 1) * size) - Math.max(player.y, y * size);
-    if (contiguousContact >= MIN_WALL_CONTACT - EPSILON) return true;
   }
   return false;
+}
+
+function canOccupy(world: World, player: Player, x: number, y: number): boolean {
+  const size = world.cellSize;
+  for (let cellY = Math.floor((y + EPSILON) / size); cellY <= Math.floor((y + player.height - EPSILON) / size); cellY++) {
+    for (let cellX = Math.floor((x + EPSILON) / size); cellX <= Math.floor((x + player.width - EPSILON) / size); cellX++) {
+      if (world.isSolid(cellX, cellY)) return false;
+    }
+  }
+  return true;
+}
+
+/** Trace small steps in a rough wall without moving through solid terrain. */
+function moveAlongWall(world: World, player: Player, distance: number): void {
+  const side = player.wall as -1 | 1;
+  if (distance !== 0) {
+    for (let offset = 0; offset <= WALL_CONTOUR_REACH; offset++) {
+      const x = player.x - side * offset;
+      // Checking every intermediate position also rules out crossing a narrow obstacle.
+      if (!canOccupy(world, player, x, player.y)) break;
+      if (!canOccupy(world, player, x, player.y + distance)) continue;
+      moveHorizontal(world, player, -side * offset);
+      break;
+    }
+    moveVertical(world, player, distance);
+  }
+  if (!player.grounded && hasClimbingSupport(world, player, side, WALL_CONTOUR_REACH)) {
+    // Close a shallow recess only as far as the first real collision allows.
+    moveHorizontal(world, player, side * WALL_CONTOUR_REACH);
+  }
 }
 
 function moveHorizontal(world: World, player: Player, distance: number): -1 | 0 | 1 {

@@ -109,17 +109,72 @@ describe('local lamps and exploration', () => {
     }
   });
 
-  it('retains a warm lamp contribution even where moonlight already has full brightness', () => {
+  it.each(['headlamp', 'torso'] as const)('subdues the %s in bright surface light while retaining its strength in a roofed room', (lamp) => {
     const world = new World(40, 40, 4);
     const state = createVision(world);
-    updateVision(world, state, {
-      position: { x: 50, y: 50 }, aim: { x: 100, y: 50 }, facing: 1,
-      headlamp: 'mouse', time: 0,
-    });
+    const input = {
+      position: { x: 50, y: 50 }, aim: { x: 100, y: 50 }, facing: 1 as const,
+      headlamp: 'mouse' as const, time: 0,
+      torsoRadius: lamp === 'torso' ? 55 : 0,
+      headlampRange: lamp === 'headlamp' ? 180 : 0,
+    };
     const index = world.index(15, 12);
+    updateVision(world, state, input);
     expect(state.moonlight[index]).toBe(1);
-    expect(state.lamplight[index]).toBeGreaterThan(0);
-    expect(state.light[index]).toBe(1);
+    const surfaceLamp = state.lamplight[index];
+    for (let x = 1; x < world.width - 1; x++) world.setSolid(x, 3, true);
+    updateVision(world, state, input);
+    expect(state.moonlight[index]).toBe(0);
+    expect(state.lamplight[index]).toBeGreaterThan(0.6);
+    expect(surfaceLamp).toBeLessThan(state.lamplight[index] * 0.15);
+  });
+
+  it('smoothly restores lamp strength as ambient light fades down a shaft', () => {
+    const world = new World(100, 100, 4);
+    for (let y = 10; y < 99; y++) {
+      for (let x = 1; x < 99; x++) world.setSolid(x, y, true);
+    }
+    for (let y = 10; y < 90; y++) world.setSolid(50, y, false);
+    const state = createVision(world);
+    const input = {
+      position: { x: 202, y: 34 }, aim: { x: 202, y: 390 }, facing: 1 as const,
+      headlamp: 'mouse' as const, time: 0, torsoRadius: 0, headlampRange: 400,
+    };
+    const indexes = [12, 25, 50, 85].map((y) => world.index(50, y));
+    updateVision(world, state, input);
+    const ambient = indexes.map((index) => state.moonlight[index]);
+    const illuminated = indexes.map((index) => state.lamplight[index]);
+    // Closing the distant entrance changes ambient exposure without changing
+    // any lamp-to-target ray, giving the undimmed baseline for each distance.
+    for (let x = 1; x < world.width - 1; x++) world.setSolid(x, 3, true);
+    updateVision(world, state, input);
+    for (const index of indexes) expect(state.moonlight[index]).toBe(0);
+    const ratios = indexes.map((index, offset) => illuminated[offset] / state.lamplight[index]);
+    expect(ambient[0]).toBeGreaterThan(0.8);
+    expect(ambient[3]).toBeLessThan(0.02);
+    expect(ratios[0]).toBeLessThan(0.4);
+    expect(ratios[1]).toBeGreaterThan(ratios[0]);
+    expect(ratios[2]).toBeGreaterThan(ratios[1]);
+    expect(ratios[3]).toBeGreaterThan(ratios[2]);
+    expect(ratios[3]).toBeGreaterThan(0.95);
+    expect(ratios.every((ratio) => ratio >= 0 && ratio <= 1)).toBe(true);
+  });
+
+  it('still illuminates a dark target when the player stands in bright surface light', () => {
+    const world = new World(100, 100, 4);
+    for (let y = 10; y < 99; y++) {
+      for (let x = 1; x < 99; x++) world.setSolid(x, y, true);
+    }
+    for (let y = 10; y < 90; y++) world.setSolid(50, y, false);
+    const state = createVision(world);
+    updateVision(world, state, {
+      position: { x: 202, y: 34 }, aim: { x: 202, y: 390 }, facing: 1,
+      headlamp: 'mouse', time: 0, torsoRadius: 0, headlampRange: 400,
+    });
+    expect(state.moonlight[world.index(50, 8)]).toBe(1);
+    expect(state.moonlight[world.index(50, 85)]).toBeLessThan(0.02);
+    expect(state.lamplight[world.index(50, 85)]).toBeGreaterThan(0.4);
+    expect(state.visible[world.index(50, 85)]).toBe(1);
   });
 
   it('emits and aims the headlamp from the helmet instead of the torso', () => {

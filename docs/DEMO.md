@@ -4,7 +4,7 @@ The demo develops the excavation and water-selling loop into a presentable Steam
 
 ## Agreed gameplay changes
 
-- Attach to walls only while falling, never during the upward part of a jump. Require a continuous section of wall support so isolated terrain cells do not catch the character. Preserve unlimited climbing, air steering, detachment, wall jumping, and protection against immediate reattachment, including getting over the top of a wall.
+- Attach to walls only while falling, never during the upward part of a jump. Require hand/torso contact backed by connected wall structure so foot-level ground bumps and isolated terrain cells do not catch the character. Dug faces need not be flat: held grips follow shallow recesses and protrusions using collision-checked horizontal adjustments. Preserve unlimited climbing, air steering, detachment, wall jumping, and protection against immediate reattachment, including getting over the top of a wall.
 - Disable digging while attached to a wall initially. A purchased upgrade enables it.
 - Replace continuous excavation with discrete pickaxe strikes. Holding the dig input repeats swings; each impact applies terrain damage, with time between impacts.
 - Give terrain durability so harder material can require several strikes. Keep partial damage when leaving an area or saving.
@@ -46,6 +46,8 @@ Use sky visibility and attenuated light spreading through connected open space a
 Keep illumination and remembered exploration distinct. Both comparison variants should have soft, workable local visibility. The sonar-dependent variant hides remote remembered cave outlines until pinged, rather than making the current working area oppressively black. Lighting must not expose water through solid rock.
 
 Unlit environment is opaque darkness: cave space, rock, water, and their physical edges must not reveal the cave silhouette. Remembered mode adds only its faint explicit exploration outline; sonar mode adds an outline only while the ping passes. Light reveals and tints the actual environment, with pale white moon/sky light and warm yellow headlamp/torso light. Adding a light must never darken an already illuminated area. Narrow shafts attenuate sky light with depth; light updates when excavation changes sky exposure.
+
+Player lamps become subdued where ambient light is stronger, restoring their strength as the surroundings darken. Evaluate this at each illuminated surface, so a headlamp aimed from daylight into a dark tunnel still works. The blend must not create a dark dip on the way toward the surface.
 
 ## Demo cutoff
 
@@ -120,6 +122,6 @@ Playtest both alternatives in each comparison, including the visible head rotati
 
 The first implementation uses a 400-unit cumulative delivery cutoff, 0.48 seconds between pickaxe swings with a 0.12-second wind-up, and 25 water units per second of hopper transfer. Earth durability is 1 and stone durability is 3. All are starting values for playtesting.
 
-Tune the core timings and delivery limit in `src/game/session.ts`, upgrade effects/prices in `src/game/economy.ts`, material durability/reach in `src/game/digging.ts`, and lighting/sonar in `src/game/vision.ts`. New Game exposes both comparison choices; the development build also exposes full visibility. The current presentation and original synthesized audio are a first pass toward the art brief.
+Tune the core timings and delivery limit in `src/game/session.ts`, upgrade effects/prices in `src/game/economy.ts`, material durability/reach in `src/game/digging.ts`, wall grip/contour tolerance in `src/game/player.ts`, and lighting/sonar in `src/game/vision.ts`. Held grips currently bridge up to 8 world pixels; ambient lamp suppression is 0.85. New Game exposes both comparison choices; the development build also exposes full visibility. The current presentation and original synthesized audio are a first pass toward the art brief.
 
 Standalone Windows packaging is available. Native macOS packaging/QA, final balance and art refinement, and the [Steam release preparation](STEAM_DEMO_RELEASE.md) remain before the public demo release.
