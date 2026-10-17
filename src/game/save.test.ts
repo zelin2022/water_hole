@@ -289,7 +289,7 @@ describe('expanded water tank saves', () => {
       original.unloading = unloading;
       const restored = deserializeSession(version === 1 ? serializeLegacySession(original) : serializeSession(original));
       expect(restored.tank).toEqual(original.tank);
-      expect(restored.tank).toMatchObject({ capacity: 200, credits: 780, water, upgraded: true });
+      expect(restored.tank).toMatchObject({ capacity: 200, credits: 650, water, upgraded: true });
       expect(restored.tank.upgrades.capacity).toBe(9);
       expect(restored.unloading).toBe(unloading);
       expect(restored.delivered).toBe(50);
@@ -341,7 +341,7 @@ describe('lamp equipment saves', () => {
       expect(stats.torsoRadius).toBeCloseTo(base.torsoRadius * 1.2 ** level, 8);
       expect(stats.headlampHalfAngle).toBeCloseTo(base.headlampHalfAngle * 1.2 ** level, 8);
       expect(stats.headlampRange).toBeCloseTo(base.headlampRange * 1.2 ** level, 8);
-      expect(restored.tank.credits).toBe(level === 1 ? 940 : 835);
+      expect(restored.tank.credits).toBe(level === 1 ? 895 : 685);
       expect(restored.delivered).toBe(session.delivered);
       expect(restored.devCreditAdjustment).toBe(session.devCreditAdjustment);
       expect(restored.world.water).toEqual(session.world.water);
@@ -463,6 +463,7 @@ describe('versioned local saves', () => {
 
   it('migrates remembered caves to dark caves while preserving every other saved field', () => {
     const session = stockedSession();
+    setDevCredits(session, 90);
     expect(buyUpgrade(session.tank, 'sonar')).toBe(true);
     session.subsurfaceScan = { origin: { x: 180, y: 120 }, startedAt: 7, maxRadius: 600 };
     session.lastSubsurfaceScanAt = 7;
@@ -503,6 +504,7 @@ describe('versioned local saves', () => {
 
   it('migrates earlier v1 saves without scanner metadata while preserving owned cave sonar and progress', () => {
     const session = stockedSession();
+    setDevCredits(session, 90);
     expect(buyUpgrade(session.tank, 'sonar')).toBe(true);
     const earlier = JSON.parse(serializeLegacySession(session));
     delete earlier.session.tank.upgrades.subsurfaceScanner;
@@ -684,7 +686,7 @@ describe('versioned local saves', () => {
     setOmniVision(session, true);
     const restored = deserializeSession(serializeSession(session));
     expect(restored.tank.credits).toBe(2.5);
-    expect(restored.devCreditAdjustment).toBe(-52.5);
+    expect(restored.devCreditAdjustment).toBe(-17.5);
     expect(restored.tank.upgrades.detector).toBe(1);
     expect(restored.options.debugVision).toBe(true);
     expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(restored.initialWater, 2);

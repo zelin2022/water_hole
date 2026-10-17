@@ -111,7 +111,7 @@ describe('local lamps and exploration', () => {
     ['headlampWidth', [71, 66], [70, 68]],
   ] as const)('illuminates progressively farther cells only after each %s purchase', (id, first, second) => {
     const world = undergroundRoom(140, 110), state = createVision(world), tank = createTank();
-    tank.credits = 100;
+    tank.credits = 105;
     const illuminate = () => updateVision(world, state, {
       position: { x: 202, y: 202 }, aim: { x: 500, y: 202 }, facing: 1, time: 0, ...upgradeStats(tank),
     });

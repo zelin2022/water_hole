@@ -1,6 +1,8 @@
 # Demo economy review
 
-The first release-candidate balance pass uses a **600-water delivery cutoff for new expeditions**, leaving upgrade prices and water generation unchanged. The numerical audit is complete; final upgrade economy tuning remains a pre-release task. This is a provisional setting based on purchase and supply arithmetic; it does not establish a playtime target. The previous 400 cutoff can end the run before a player has much opportunity to use a completed showcase track. Existing saves retain their original 400-water ending, whether active or already completed; the cutoff is now stored per expedition.
+The v0.1.26 balance pass applies the approved upgrade prices and retains the **600-water delivery cutoff for new expeditions**. Water generation and equipment effects are unchanged. Existing saves retain their stored limit; saves without one keep their original 400-water ending, whether active or already completed. Repricing preserves purchased levels, actual water, and credits without refunds. Final progression and economy tuning remain pre-release work; purchase and supply arithmetic does not establish a playtime target.
+
+The approved next progression rule starts with one visible upgrade track and reveals another track after each purchased level. Its exact mapping and implementation remain pending, so this price update keeps the current availability rules. The audit below therefore models those current rules.
 
 ## Reproduce the audit
 
@@ -12,25 +14,46 @@ The script loads the current game modules through Vite. It models hopper-only pu
 
 The default output contains compact purchase and supply tables. Full ledgers and per-seed data are saved to the gitignored `benchmark-results/economy.json`, including package version, UTC creation time, seed count, and seed rule. Add `--json` to also print that complete JSON on stdout. Run with the default 64 seeds to reproduce the supply figures below; smaller sample counts are useful for a quick command check but produce different aggregates.
 
-This audit took approximately two seconds on the development machine. It is deliberately independent of rendering and hardware-load benchmarks.
+The v0.1.26 audit reproduced the unchanged 64-seed supply figures below. It is deliberately independent of rendering and hardware-load benchmarks.
 
 ## Purchase opportunity
 
-All visible equipment costs **1,340 credits** together. Mining costs 285, nine tank purchases cost 270, each seven-level mobility track costs 175, and double jump costs 35. Other equipment and lighting consume the remaining 400 credits. One delivered water grants one credit.
+All visible equipment costs **2,710 credits** together. One delivered water grants one credit.
 
-The following results assume complete collection, no spills left behind, full returns except the final capped transfer, and buying each planned upgrade as soon as hopper funds allow it. The end screen prevents purchasing after reaching the cutoff.
+| Equipment | Successive prices (cr) | Complete cost (cr) |
+| --- | --- | ---: |
+| Mining radius | 15/20/30/45/65/90/125 | 390 |
+| Mining damage | 30/55/95 | 180 |
+| Mining speed | 30/55/95 | 180 |
+| Jump power | 15/20/30/45/65/90/125 | 390 |
+| Climbing assist | 15/20/30/45/65/90/125 | 390 |
+| Tank capacity | 10/15/20/25/35/45/60/80/110 | 400 |
+| Torso-lamp radius | 35/70 | 105 |
+| Headlamp width | 35/70 | 105 |
+| Headlamp depth | 35/70 | 105 |
+| Water detector | 60 | 60 |
+| Detector range | 45/90 | 135 |
+| Work harness | 80 | 80 |
+| Cave sonar | 90 | 90 |
+| Double jump | 100 | 100 |
 
-| Purchase plan | Bought completely after delivered water | Water remaining at 400 cutoff | Water remaining at 600 cutoff | Water remaining at 800 cutoff |
+Mining totals **750 credits**; adding the first tank purchase and work harness brings it to **840**. Mining, both mobility tracks, and double jump total 1,630. The hidden Subsurface scanner is unchanged and excluded from the visible total. These prices replace the v0.1.25 pass's 1,340-credit visible total and 285-credit mining total.
+
+The following v0.1.26 results assume complete collection, no spills left behind, full returns except the final capped transfer, and buying each planned upgrade as soon as hopper funds allow it. Mining plans buy all radius levels, then damage, then speed. The end screen prevents purchasing at or after the cutoff. These plans use current availability and are unconstrained by the pending track-reveal mapping.
+
+| Purchase plan at 600 cutoff | Hopper returns | Purchases completed | Complete plan after delivered water | Water remaining after complete plan |
 | --- | ---: | ---: | ---: | ---: |
-| Tank only | 280 | 120 | 320 | 520 |
-| Mining only, starting tank | 300 | 100 | 300 | 500 |
-| One tank purchase, then complete mining | 300 | 100 | 300 | 500 |
-| Complete climbing plus double jump | 220 | 180 | 380 | 580 |
-| Complete tank, then complete mining | 680 | Cannot complete | Cannot complete | 120 |
+| Tank only | 6 | 9/9 | 420 | 180 |
+| Mining only, starting tank | 30 | 10/13 | Cannot complete | — |
+| One tank purchase, then complete mining | 16 | 11/14 | Cannot complete | — |
+| Complete climbing plus double jump | 30 | 8/8 | 500 | 100 |
+| Complete tank, then complete mining | 6 | 10/22 | Cannot complete | — |
 
-Buying a larger tank early matters for return count. The one-tank-then-mining plan requires 11 hopper returns at 400, 16 at 600, or 21 at 800. The tank-only plan requires five, six, or seven returns respectively. These counts exclude the time spent finding water, digging, climbing, and making purchasing decisions. They must not be presented as expected playtime.
+For comparison, the tank-only plan needs five returns at a 400 cutoff and seven at 800; it is incomplete at 400 and completes at 420 with either higher limit. One tank purchase followed by mining needs 11/16/21 returns at 400/600/800 and completes only in the 800 comparison, at 780 delivered with 20 water remaining. Mining with the starting tank completes at 760 in the 800 comparison, leaving 40. Complete tank plus mining is incomplete at all three comparison limits. The 800 limit is arithmetic exploration, not a supported saved-run limit.
 
-A 600 cutoff adds a useful post-upgrade collection window while retaining substantial equipment choices. Raising it to 800 also permits complete tank and mining tracks in the same efficient run, but increases travel for players who neglect capacity. For the first candidate, keep prices intact and change only the cutoff so its effect can be assessed separately.
+These counts exclude the time spent finding water, digging, climbing, and making purchasing decisions. They must not be presented as expected playtime.
+
+The complete mining set now costs more than the unchanged 600-water cutoff, even before travel equipment. The earlier goal of showcasing all three completed mining tracks needs a later balance decision; the price approval does not establish that goal as achievable or the economy as balanced. The initial v0.1.25 audit supported a longer post-upgrade window under its older prices; that conclusion does not carry over to this price pass.
 
 ## Seeded supply
 
@@ -44,12 +67,12 @@ With the existing three-size distribution and independent 20% dry rolls, the 64-
 | Shallowest depth containing 600 cumulative water across the map width | 58 m | 91 m | 128 m |
 | Shallowest depth containing 800 cumulative water across the map width | 87 m | 125.5 m | 187 m |
 
-Thirty-seven of the 64 sites contain at least 400 water in that shallow area; only two contain 600 there. None contain 800 there. These are supply bounds that sum all pockets across the map width, not reachable routes or predictions of how far a player will actually descend. They show that neither the old cutoff nor the proposed one requires approaching the map's 2,000-metre bottom.
+Thirty-seven of the 64 sites contain at least 400 water in that shallow area; only two contain 600 there. None contain 800 there. These are supply bounds that sum all pockets across the map width, not reachable routes or predictions of how far a player will actually descend. They show that neither the legacy cutoff nor the current one requires approaching the map's 2,000-metre bottom.
 
 Eleven sampled starters are dry. Reproducible dry-start examples include seeds **3041712678**, **2802362286**, and **3816266512**. Include a dry start in local readiness checks. Preserve the independent dry roll rather than imposing a wet quota or silently rerolling the initial pocket. An initially dry pocket especially needs controls and feedback that explain the empty discovery without assuming the player already owns a detector.
 
 ## Limits and follow-up
 
-This analysis does not measure enjoyment, difficulty, actual return time, or whether the controls teach themselves. It assumes players can discover and collect the generated water. Before release, complete normal playthroughs without developer credits, including wet and dry starts. Assess early purchase pacing, collection and return trips, meaningful equipment tradeoffs, and whether a mining-focused run reaches its extreme upgrades with enough play left to use them. Tune prices, upgrade effects, or the delivery cutoff as needed and confirm the final balance. This is separate from the completed arithmetic audit.
+This analysis does not measure enjoyment, difficulty, actual return time, or whether the controls teach themselves. It assumes players can discover and collect the generated water. Before release, settle the approved track-reveal mapping and implement it, then rerun the purchase audit and complete normal playthroughs without developer credits, including wet and dry starts. Assess early purchase pacing, collection and return trips, meaningful equipment tradeoffs, and the revised mining showcase goal. Tune prices, upgrade effects, or the delivery cutoff as needed and confirm the final balance. This remains separate from the arithmetic audit.
 
 The release should remain a bounded demo with a thank-you ending; artifact searching and additional cave systems remain full-version work. Reports from the released demo can inform further small balance patches after this initial tuning pass.

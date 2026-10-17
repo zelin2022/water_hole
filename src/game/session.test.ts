@@ -41,7 +41,7 @@ function advanceExact(session: Session, seconds: number, dt: number, input: Part
 
 function fullTankAtLevel(level: number): Session {
   const session = fixture();
-  session.tank.credits = 270;
+  session.tank.credits = 400;
   for (let purchase = 0; purchase < level; purchase++) expect(buyUpgrade(session.tank, 'capacity')).toBe(true);
   session.tank.credits = 0;
   session.tank.water = session.tank.capacity;
@@ -278,7 +278,7 @@ describe('demo session', () => {
 
   it('applies faster upgrades as discrete swings with shorter wind-up instead of continuous digging', () => {
     const session = fixture();
-    session.tank.credits = 100;
+    session.tank.credits = 180;
     for (let level = 0; level < 3; level++) expect(buyUpgrade(session.tank, 'digSpeed')).toBe(true);
     const digging = { ...idle, digging: true, aim: { x: 300, y: 104 } };
     stepSession(session, digging, 0.01);
@@ -371,7 +371,7 @@ describe('demo session', () => {
   });
 
   it('applies purchased jump power and double jump to real session movement', () => {
-    const session = fixture(); session.tank.credits = 250;
+    const session = fixture(); session.tank.credits = 490;
     for (let level = 0; level < 7; level++) expect(buyUpgrade(session.tank, 'jumpPower')).toBe(true);
     expect(buyUpgrade(session.tank, 'doubleJump')).toBe(true);
     stepSession(session, { ...idle, jumpPressed: true }, 1 / 120);
@@ -384,7 +384,7 @@ describe('demo session', () => {
   });
 
   it('applies the highest purchased climbing speed while keeping a wall grip', () => {
-    const session = fixture(); session.tank.credits = 175;
+    const session = fixture(); session.tank.credits = 390;
     for (let level = 0; level < 7; level++) expect(buyUpgrade(session.tank, 'climbSpeed')).toBe(true);
     for (let y = 1; y < 30; y++) session.world.setSolid(22, y, true);
     session.player.x = 72; session.player.y = 80;
