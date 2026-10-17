@@ -206,6 +206,7 @@ describe('provisional development controls', () => {
 
   it('sets the exact balance and records only the signed difference without changing gameplay', () => {
     const session = createSession({ seed: 42 });
+    session.tank.upgrades.digRadius = 4; // Four prior purchases reveal the tank track.
     const before = JSON.stringify(session);
     expect(setDevCredits(session, 500)).toBe(true);
     expect(session.tank.credits).toBe(500);

@@ -110,7 +110,7 @@ Starting headlamp depth is 126 world pixels, reduced by 30% from 180. Its full c
 
 Cumulative water delivered to the machine triggers a demo limit. Treat this as the boundary of the available demo, rather than a mission, contract, or in-world victory objective. Spending earned credits does not reduce the delivered total.
 
-New expeditions use a provisional limit of 600 water; older saves without a stored limit keep 400, including completed runs. Persist the per-expedition limit without changing its resource ledger. The v0.1.26 price update keeps this cutoff and water generation unchanged. Its 750-credit complete mining set exceeds the cutoff, so the earlier three-track mining showcase goal needs a later balance decision. See [the economy review](ECONOMY_REVIEW.md) for the purchase and supply audit.
+New expeditions use a provisional limit of 600 water; older saves without a stored limit keep 400, including completed runs. Persist the per-expedition limit without changing its resource ledger. The v0.1.27 reveal progression retains the approved v0.1.26 prices, this cutoff, and water generation. The 750-credit complete mining set exceeds the cutoff, so the earlier three-track mining showcase goal needs a later balance decision. See [the economy review](ECONOMY_REVIEW.md) for the purchase and supply audit.
 
 On reaching the limit, congratulate the player on beating the demo and end gameplay. Offer an optional one-to-five-star rating and suggestions text box. Do not continue the simulation behind the end screen. A completed save must restore the ended state. The ending also offers bug reporting, a new expedition, the main menu, and desktop Quit. An optional Steam wishlist link appears only after a real store URL is configured.
 
@@ -135,7 +135,7 @@ The following selection is approved for the provisional build and remains subjec
 | Digging while attached to a wall | One purchase; disabled before purchase |
 | Cave sonar | One purchase; temporarily traces connected tunnel walls for navigation |
 
-Mining and traversal retain exaggerated maximum capabilities. Tank capacity has nine purchases; detector range retains its two-purchase bound. The shop must show the current stat, purchase effect, price, and affordability. The approved prices below apply in v0.1.26; their pacing remains provisional.
+Mining and traversal retain exaggerated maximum capabilities. Tank capacity has nine purchases; detector range retains its two-purchase bound. The shop must show the current stat, purchase effect, price, and affordability. The approved v0.1.26 prices below remain unchanged in v0.1.27; their pacing remains provisional.
 
 | Track | Base and successive values | Successive prices (cr) |
 | --- | --- | --- |
@@ -163,11 +163,30 @@ Base climbing is 75 world pixels per second. Base ground launch is `275 × 75/13
 
 Each complete jump or climbing track costs 390 credits; double jump costs 100. Wall-origin jumps and their air jump use the lesser of the current jump launch speed and 1.6 times the climbing speed corresponding to that jump tier. This permits faster wall scaling than unupgraded climbing after investing in jump power, while keeping optimized repeated wall/air-jump ascent roughly equal to or below same-tier climbing assist. Climbing speed purchases do not change the wall-jump cap. Ground-origin jumps retain the full jump-power speed. All mining and mobility purchases total 1,630 credits, so the 600-water cutoff requires choosing equipment across normal runs; do not imply that all equipment can be maximized together before it.
 
-Hide unavailable upgrades, including unmet prerequisites and equipment with no remaining levels. Show eligible upgrades without enough funding with a red price such as "40 cr"; funded upgrades retain the install button. The approved next progression rule starts with one visible upgrade track and reveals another track for each purchased level. Its exact track mapping and implementation remain pending; the v0.1.26 price update keeps current prerequisites and availability rules.
+Hide unavailable upgrades, including unrevealed tracks, unmet prerequisites, and equipment with no remaining levels. Show eligible upgrades without enough funding with a red price such as "40 cr"; funded upgrades retain the install button. New expeditions reveal only mining radius. Every purchased visible equipment level reveals one more track, including repeat purchases within an existing track. Use this order:
 
-The three lamp tracks currently remain available from the start with no prerequisite. Each complete track costs 105 credits; all lamp purchases total 315. Older saves without these entries receive level zero without changing terrain, water, credits, or other equipment. Save purchased lamp levels and restore their illumination. Derive terrain-only halo reach from the restored torso level without adding a purchase or save field; development omni vision stays independent of lamp equipment.
+| Order | Track |
+| ---: | --- |
+| 0 | Mining radius |
+| 1 | Mining damage |
+| 2 | Water detector |
+| 3 | Climbing speed |
+| 4 | Tank capacity |
+| 5 | Jump power |
+| 6 | Digging speed |
+| 7 | Cave sonar |
+| 8 | Work harness |
+| 9 | Double jump |
+| 10 | Headlamp depth |
+| 11 | Torso lamp |
+| 12 | Detector range |
+| 13 | Headlamp width |
 
-Tank capacity has ten equipment levels in total, indexed 0–9, with capacity `20 * (L + 1)` at upgrade level L. The nine purchases cost 400 credits altogether, allowing the complete tank track before the 600-water cutoff while still requiring choices among other tracks. Suction stays at 36 water per second at every level. Full-tank unloading time is `0.8 * (1 + L / 9)` seconds, and hopper transfer rate is capacity divided by that time. The 20-water starting tank empties in 0.8 seconds at 25 water per second; the 200-water maximum tank empties in 1.6 seconds at 125 water per second. Partial tanks empty proportionally to their contents at the same equipment-derived rate. Interrupted transfers credit only the delivered water, and reaching the demo cutoff must stop the transfer and simulation immediately.
+The revealed prefix contains one plus the total purchased visible equipment levels, capped to the prerequisite-eligible order. Skip detector range until the detector is owned; without a detector, headlamp width can therefore reveal after twelve purchases. Completed tracks keep their position in the order even though their shop rows disappear. Preserve access to previously owned tracks outside the prefix when loading older saves. Credits and delivered water do not count as purchases. The hidden Subsurface scanner is never revealed and its saved level does not contribute. Derive progression from existing saved equipment levels without adding save fields or changing the saved world or resource ledger.
+
+The three lamp tracks follow the reveal order and have no equipment prerequisite. Each complete track costs 105 credits; all lamp purchases total 315. Older saves without these entries receive level zero without changing terrain, water, credits, or other equipment. Save purchased lamp levels and restore their illumination. Derive terrain-only halo reach from the restored torso level without adding a purchase or save field; development omni vision stays independent of lamp equipment.
+
+Tank capacity has ten equipment levels in total, indexed 0–9, with capacity `20 * (L + 1)` at upgrade level L. The nine purchases cost 400 credits altogether, and the track first reveals after four purchased levels. Account for those earlier purchases and the final delivery wall when assessing whether a particular purchase route completes it. Suction stays at 36 water per second at every level. Full-tank unloading time is `0.8 * (1 + L / 9)` seconds, and hopper transfer rate is capacity divided by that time. The 20-water starting tank empties in 0.8 seconds at 25 water per second; the 200-water maximum tank empties in 1.6 seconds at 125 water per second. Partial tanks empty proportionally to their contents at the same equipment-derived rate. Interrupted transfers credit only the delivered water, and reaching the demo cutoff must stop the transfer and simulation immediately.
 
 Existing saved capacity levels 0/1/2 keep their original 20/40/60 capacities. Preserve all purchased equipment levels, actual tank water, credits, delivered totals, and terrain without price refunds or regeneration; derive the unloading rate from the restored capacity level without adding save fields. Backpack growth remains bounded at the previous 60-water model size so larger capacity does not obscure the worker or environment. All visible equipment totals 2,710 credits; the hidden Subsurface scanner remains unchanged.
 
@@ -217,6 +236,8 @@ Verify all 7/3/3 mining purchases, capped prices, the 750-credit mining total, d
 Verify two purchases for each lamp track, 20% compounding geometry changes, capped levels/prices, affordability, and independent equipment effects. Round-trip lamp levels and migrate missing entries to zero while retaining the saved world and economy. Check the terrain-only halo's four-cell base distance from every side of the body rectangle, soft edge fade, 20% torso scaling, and restored equipment reach. Verify it reveals nearby solid terrain and damage but leaves water and sealed cave interiors hidden, hides terrain again when moving away, and does not change terrain, collision, damage, or resource ledgers. Playtest the smaller starter beam and each upgraded lamp in darkness, through excavated passages, and near surface light; check that terrain still blocks ordinary illumination and omni vision does not change equipment.
 
 Verify all nine capacity purchases, 20-water increments through 200, capped levels/prices, and the 400-credit track total. Check unchanged suction at every level and monotonically increasing full-unload duration from 0.8 to 1.6 seconds, with exact actual-water crediting across partial and interrupted transfers and the delivery cutoff. Round-trip maximum capacity and preserve legacy 20/40/60 tanks, water, and credits. Playtest shop descriptions, larger tank HUD values, accelerated hopper transfer, and bounded backpack visuals.
+
+Verify the exact reveal order, one initial track, repeat-level counting, immediate shop refresh after purchases, locked direct-purchase rejection, and maxed-track positions. Check detector-range skipping and later prerequisite satisfaction, hidden-scanner exclusion, and preserved access to older owned tracks. Round-trip reveal state through existing equipment fields without extra save metadata or resource changes. The economy audit must honor these gates, identify blocked fixed plans, and label mixed progression examples separately.
 
 ## Provisional build tuning
 

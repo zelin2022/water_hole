@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { World } from './world';
-import { buyUpgrade, createTank, upgradeStats } from './economy';
+import { createTank, upgradeStats } from './economy';
 import { createPlayer } from './player';
 import { totalWater } from './water';
 import { createSession, DEMO_DELIVERY_LIMIT, stepSession, type GameInput, type Session } from './session';
@@ -41,9 +41,9 @@ function advanceExact(session: Session, seconds: number, dt: number, input: Part
 
 function fullTankAtLevel(level: number): Session {
   const session = fixture();
-  session.tank.credits = 400;
-  for (let purchase = 0; purchase < level; purchase++) expect(buyUpgrade(session.tank, 'capacity')).toBe(true);
-  session.tank.credits = 0;
+  session.tank.upgrades.capacity = level;
+  session.tank.capacity = upgradeStats(session.tank).capacity;
+  session.tank.upgraded = level > 0;
   session.tank.water = session.tank.capacity;
   session.initialWater = session.tank.water;
   return session;
@@ -238,6 +238,7 @@ describe('demo session', () => {
 
   it('cancels unloading on departure and requires machine proximity for purchases', () => {
     const session = fixture(); session.tank.water = 20; session.tank.credits = 100;
+    session.tank.upgrades.digRadius = 4; // Four prior purchases reveal the tank track.
     advance(session, 0.1, { depositPressed: true });
     session.player.x = 220;
     stepSession(session, { ...idle, purchase: 'capacity' }, 1 / 60);
@@ -278,8 +279,7 @@ describe('demo session', () => {
 
   it('applies faster upgrades as discrete swings with shorter wind-up instead of continuous digging', () => {
     const session = fixture();
-    session.tank.credits = 180;
-    for (let level = 0; level < 3; level++) expect(buyUpgrade(session.tank, 'digSpeed')).toBe(true);
+    session.tank.upgrades.digSpeed = 3;
     const digging = { ...idle, digging: true, aim: { x: 300, y: 104 } };
     stepSession(session, digging, 0.01);
     stepSession(session, digging, 0.01);
@@ -304,10 +304,9 @@ describe('demo session', () => {
       session.world.setMaterial(30, 22, 3);
       session.world.water[session.world.index(18, 29)] = 0.75;
       session.initialWater = totalWater(session.world);
-      session.tank.credits = 1000;
-      for (let level = 0; level < 3; level++) buyUpgrade(session.tank, 'digDamage');
+      session.tank.upgrades.digDamage = 3;
     }
-    for (let level = 0; level < 7; level++) buyUpgrade(showcase.tank, 'digRadius');
+    showcase.tank.upgrades.digRadius = 7;
     advance(ordinary, 0.15, { digging: true, aim: { x: 300, y: 104 } });
     advance(showcase, 0.15, { digging: true, aim: { x: 300, y: 104 } });
     expect(showcase.lastStrike!.removed).toBeGreaterThan(ordinary.lastStrike!.removed * 8);
@@ -320,7 +319,7 @@ describe('demo session', () => {
     }
   });
 
-  it('locks wall digging until its equipment purchase', () => {
+  it('locks wall digging until its equipment is owned', () => {
     const session = fixture();
     // A full adjacent wall keeps the player attached during the strike wind-up.
     for (let y = 15; y < 30; y++) session.world.setSolid(22, y, true);
@@ -328,7 +327,7 @@ describe('demo session', () => {
     session.player.x = 72; session.player.y = 80;
     advance(session, 0.2, { digging: true, aim: { x: 300, y: 104 } });
     expect(session.lastStrike).toBeNull();
-    session.tank.credits = 100; buyUpgrade(session.tank, 'wallDig');
+    session.tank.upgrades.wallDig = 1;
     advance(session, 0.2, { digging: true, aim: { x: 300, y: 104 } });
     expect(session.lastStrike).not.toBeNull();
   });
@@ -371,9 +370,9 @@ describe('demo session', () => {
   });
 
   it('applies purchased jump power and double jump to real session movement', () => {
-    const session = fixture(); session.tank.credits = 490;
-    for (let level = 0; level < 7; level++) expect(buyUpgrade(session.tank, 'jumpPower')).toBe(true);
-    expect(buyUpgrade(session.tank, 'doubleJump')).toBe(true);
+    const session = fixture();
+    session.tank.upgrades.jumpPower = 7;
+    session.tank.upgrades.doubleJump = 1;
     stepSession(session, { ...idle, jumpPressed: true }, 1 / 120);
     expect(session.player.vy).toBeCloseTo(-1072.5, 5);
     expect(session.player.airJumpAvailable).toBe(true);
@@ -384,8 +383,8 @@ describe('demo session', () => {
   });
 
   it('applies the highest purchased climbing speed while keeping a wall grip', () => {
-    const session = fixture(); session.tank.credits = 390;
-    for (let level = 0; level < 7; level++) expect(buyUpgrade(session.tank, 'climbSpeed')).toBe(true);
+    const session = fixture();
+    session.tank.upgrades.climbSpeed = 7;
     for (let y = 1; y < 30; y++) session.world.setSolid(22, y, true);
     session.player.x = 72; session.player.y = 80;
     session.player.grounded = false; session.player.wall = 1;
@@ -399,6 +398,7 @@ describe('demo session', () => {
 describe('fractional transfer affordability', () => {
   it('allows capacity purchases after fractional unloading without overcharging', () => {
     const session = fixture();
+    session.tank.upgrades.digRadius = 4; // Four prior purchases reveal the tank track.
     for (let trip = 0; trip < 3; trip++) {
       session.tank.water = 20;
       advance(session, 1, { depositPressed: true });

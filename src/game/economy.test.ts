@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { World } from './world';
 import { totalWater } from './water';
-import { BASE_UNLOAD_RATE, buyUpgrade, canBuyUpgrade, collectIntoTank, createTank, CREDIT_EPSILON, depositAtHopper, UPGRADE_DEFINITIONS, upgradeAvailability, upgradeStats, type UpgradeId } from './economy';
+import { BASE_UNLOAD_RATE, buyUpgrade, canBuyUpgrade, collectIntoTank, createTank, CREDIT_EPSILON, depositAtHopper, UPGRADE_DEFINITIONS, UPGRADE_REVEAL_ORDER, upgradeAvailability, upgradeStats, type UpgradeId } from './economy';
+
+/** Earlier purchases reveal the shop; exclude the equipment being exercised here. */
+function progressedTank(excluded: UpgradeId[] = []) {
+  const tank = createTank();
+  let remaining = UPGRADE_REVEAL_ORDER.length - 1;
+  for (const definition of UPGRADE_DEFINITIONS) {
+    if (definition.hidden || definition.requires || definition.id === 'capacity' || excluded.includes(definition.id)) continue;
+    const level = Math.min(remaining, definition.costs.length);
+    tank.upgrades[definition.id] = level;
+    remaining -= level;
+    if (!remaining) break;
+  }
+  expect(remaining).toBe(0);
+  return tank;
+}
 
 describe('tank and incremental sales', () => {
   it('starts empty with no equipment upgrades', () => {
@@ -48,7 +63,7 @@ describe('equipment purchases', () => {
   it.each([
     ['wallDig', 40, 80], ['doubleJump', 35, 100], ['sonar', 30, 90], ['detector', 25, 60],
   ] as const)('requires earning the premium price for %s and charges it exactly once', (id, previousPrice, price) => {
-    const tank = createTank();
+    const tank = progressedTank([id]);
     const fund = (amount: number) => {
       while (amount > 0) {
         const portion = Math.min(amount, tank.capacity);
@@ -72,7 +87,7 @@ describe('equipment purchases', () => {
   });
 
   it('extends the four-cell terrain halo by 20% with each torso lamp purchase only', () => {
-    const tank = createTank(); tank.credits = 1000;
+    const tank = progressedTank(['torsoLamp', 'headlampWidth', 'headlampDepth']); tank.credits = 1000;
     expect(upgradeStats(tank).terrainRevealCells).toBe(4);
     for (let level = 1; level <= 2; level++) {
       expect(buyUpgrade(tank, 'torsoLamp')).toBe(true);
@@ -96,8 +111,9 @@ describe('equipment purchases', () => {
     ['headlampWidth', 'headlampHalfAngle', Math.PI / 5 * 0.9],
     ['headlampDepth', 'headlampRange', 180 * 0.7],
   ] as const)('offers two independent 20 percent increases for %s without changing other equipment or water', (id, stat, base) => {
-    const tank = createTank(); tank.water = 12;
+    const tank = progressedTank([id]); tank.water = 12;
     const initial = upgradeStats(tank);
+    const initialEquipment = { ...tank.upgrades };
     expect(tank.upgrades[id]).toBe(0);
     expect(UPGRADE_DEFINITIONS.find(definition => definition.id === id)).toMatchObject({ costs: [35, 70] });
     expect(upgradeAvailability(tank, id)).toBe('unaffordable');
@@ -116,7 +132,7 @@ describe('equipment purchases', () => {
       expect(tank.capacity).toBe(20);
       expect(tank.upgraded).toBe(false);
       for (const [otherId, otherLevel] of Object.entries(tank.upgrades)) {
-        if (otherId !== id) expect(otherLevel).toBe(0);
+        if (otherId !== id) expect(otherLevel).toBe(initialEquipment[otherId as UpgradeId]);
       }
       if (level === 1) {
         expect(upgradeAvailability(tank, id)).toBe('unaffordable');
@@ -133,7 +149,7 @@ describe('equipment purchases', () => {
   });
 
   it('retains the subsurface scanner as hidden equipment without allowing purchases', () => {
-    const tank = createTank(); tank.credits = 500;
+    const tank = progressedTank(); tank.credits = 500;
     const scanner = 'subsurfaceScanner' as UpgradeId;
     expect(UPGRADE_DEFINITIONS.find(definition => definition.id === scanner)).toMatchObject({
       name: 'Subsurface scanner', hidden: true,
@@ -149,7 +165,7 @@ describe('equipment purchases', () => {
   });
 
   it('hides prerequisite-gated and fully installed upgrades regardless of funding', () => {
-    const tank = createTank(); tank.credits = 500;
+    const tank = progressedTank(['detector', 'detectorRange']); tank.credits = 500;
     expect(upgradeAvailability(tank, 'detectorRange')).toBe('unavailable');
     expect(upgradeAvailability(tank, 'unknown' as UpgradeId)).toBe('unavailable');
     expect(buyUpgrade(tank, 'detector')).toBe(true);
@@ -191,11 +207,12 @@ describe('equipment purchases', () => {
   });
 
   it('offers nine twenty-unit capacity purchases, caps at 200, and never changes carried water or other equipment', () => {
-    const tank = createTank(); tank.water = 10; tank.credits = 9;
+    const tank = progressedTank(); tank.water = 10; tank.credits = 9;
     expect(buyUpgrade(tank, 'capacity')).toBe(false);
     expect(UPGRADE_DEFINITIONS.find(definition => definition.id === 'capacity')!.costs)
       .toEqual([10, 15, 20, 25, 35, 45, 60, 80, 110]);
     const initialStats = upgradeStats(tank);
+    const initialEquipment = { ...tank.upgrades };
     tank.credits = 400;
     for (let level = 0; level <= 9; level++) {
       if (level > 0) expect(buyUpgrade(tank, 'capacity')).toBe(true);
@@ -206,7 +223,7 @@ describe('equipment purchases', () => {
       expect(stats).toEqual({ ...initialStats, capacity: stats.capacity, unloadRate: stats.unloadRate });
       expect(tank.water).toBe(10);
       expect(tank.upgraded).toBe(level > 0);
-      expect(Object.entries(tank.upgrades).every(([id, value]) => id === 'capacity' || value === 0)).toBe(true);
+      expect(Object.entries(tank.upgrades).every(([id, value]) => id === 'capacity' || value === initialEquipment[id as UpgradeId])).toBe(true);
     }
     expect(tank.credits).toBe(0);
     tank.credits = 100;
@@ -218,7 +235,7 @@ describe('equipment purchases', () => {
 
   it('increases unloading speed each level while smoothly doubling full-tank time from 0.8 to 1.6 seconds', () => {
     expect(BASE_UNLOAD_RATE).toBe(25);
-    const tank = createTank(); tank.credits = 400;
+    const tank = progressedTank(); tank.credits = 400;
     let previousRate = 0, previousTime = 0;
     for (let level = 0; level <= 9; level++) {
       if (level > 0) expect(buyUpgrade(tank, 'capacity')).toBe(true);
@@ -235,7 +252,7 @@ describe('equipment purchases', () => {
   });
 
   it('requires the detector before range purchases and grants one-time equipment once', () => {
-    const tank = createTank(); tank.credits = 500;
+    const tank = progressedTank(['detector', 'detectorRange', 'wallDig']); tank.credits = 500;
     expect(buyUpgrade(tank, 'detectorRange')).toBe(false);
     expect(upgradeStats(tank).detectorRadius).toBe(0);
     expect(buyUpgrade(tank, 'detector')).toBe(true);
@@ -248,13 +265,13 @@ describe('equipment purchases', () => {
   });
 
   it('changes radius, damage and climbing independently', () => {
-    const tank = createTank(); tank.credits = 500;
+    const tank = progressedTank(['digRadius', 'digDamage', 'climbSpeed']); tank.credits = 500;
     buyUpgrade(tank, 'digRadius'); buyUpgrade(tank, 'digDamage'); buyUpgrade(tank, 'climbSpeed');
     expect(upgradeStats(tank)).toMatchObject({ digRadius: 16, digDamage: 2, climbSpeed: 135, capacity: 20 });
   });
 
-  it('offers seven independent jump and climb purchases plus a one-time double jump before the demo wall', () => {
-    const tank = createTank(); tank.credits = 1000; tank.water = 12;
+  it('offers seven independent jump and climb purchases plus a one-time double jump', () => {
+    const tank = progressedTank(['jumpPower', 'climbSpeed', 'doubleJump', 'digRadius']); tank.credits = 1000; tank.water = 12;
     const initial = upgradeStats(tank);
     expect(initial).toMatchObject({ climbSpeed: 75, wallJumpSpeed: 120, doubleJump: false });
     expect(initial.jumpSpeed).toBeCloseTo(275 * 75 / 130, 8);

@@ -16,7 +16,8 @@ assert(Number.isInteger(seedCount) && seedCount > 0 && seedCount <= 1024,
   '--seeds must be an integer from 1 through 1024');
 const server = await createServer({ configFile: false, root, logLevel: 'silent', server: { middlewareMode: true, watch: null } });
 try {
-  const { UPGRADE_DEFINITIONS, createTank, buyUpgrade, depositAtHopper } = await server.ssrLoadModule('/src/game/economy.ts');
+  const { UPGRADE_DEFINITIONS, UPGRADE_REVEAL_ORDER, createTank, buyUpgrade, depositAtHopper,
+    upgradeAvailability, purchasedUpgradeCount } = await server.ssrLoadModule('/src/game/economy.ts');
   const { generateSite } = await server.ssrLoadModule('/src/game/generation.ts');
   const { DEMO_DELIVERY_LIMIT } = await server.ssrLoadModule('/src/game/session.ts');
   const repeat = (id, count) => Array(count).fill(id);
@@ -28,9 +29,24 @@ try {
     'tank then mining': [...repeat('capacity', 9), ...mining],
     'climbing and double jump': [...repeat('climbSpeed', 7), 'doubleJump'],
   };
-  function purchasePlan(plan, limit) {
+  const unlockExamples = { 'tank-priority mining': ['capacity', 'digRadius', 'digDamage', 'digSpeed'] };
+  const definitionFor = id => UPGRADE_DEFINITIONS.find(definition => definition.id === id);
+  function blockedPurchase(tank, id, delivered) {
+    const definition = definitionFor(id);
+    const purchasedCount = purchasedUpgradeCount(tank);
+    const eligibleOrder = UPGRADE_REVEAL_ORDER.filter(candidate => {
+      const prerequisite = definitionFor(candidate).requires;
+      return !prerequisite || tank.upgrades[prerequisite] > 0;
+    });
+    const requiredPurchases = eligibleOrder.indexOf(id);
+    const reason = definition.requires && !tank.upgrades[definition.requires]
+      ? `requires ${definition.requires}`
+      : `requires ${requiredPurchases} purchased visible levels; currently ${purchasedCount}`;
+    return { id, delivered, requiredPurchases: requiredPurchases < 0 ? null : requiredPurchases, purchasedCount, reason };
+  }
+  function purchasePlan(plan, limit, priorities = null) {
     const tank = createTank();
-    let delivered = 0, returns = 0, index = 0, completeAt = null;
+    let delivered = 0, returns = 0, index = 0, completeAt = null, blocked = null;
     const ledger = [];
     while (delivered < limit) {
       const capacity = tank.capacity;
@@ -40,8 +56,22 @@ try {
       const purchases = [];
       // Actual ending freezes the session; no purchase at the cutoff.
       if (delivered < limit) {
-        while (index < plan.length && buyUpgrade(tank, plan[index])) {
-          purchases.push(plan[index++]);
+        while (index < plan.length && !blocked) {
+          // The separate priority example may choose any affordable target
+          // track that has actually been revealed; strict plans never skip.
+          const id = priorities ? priorities.find(candidate =>
+            tank.upgrades[candidate] < definitionFor(candidate).costs.length
+            && upgradeAvailability(tank, candidate) === 'available') : plan[index];
+          if (!id) break;
+          const availability = upgradeAvailability(tank, id);
+          if (availability === 'unavailable') {
+            blocked = blockedPurchase(tank, id, delivered);
+            break;
+          }
+          if (availability !== 'available') break;
+          assert(buyUpgrade(tank, id), `Eligible ${id} purchase must succeed`);
+          purchases.push(id);
+          index++;
         }
         if (index === plan.length && completeAt === null) completeAt = delivered;
       }
@@ -51,6 +81,7 @@ try {
       sum + definition.costs.slice(0, tank.upgrades[definition.id]).reduce((s, cost) => s + cost, 0), 0);
     assert.equal(delivered, tank.credits + spent, 'Every delivered unit must be accounted for');
     return { returns, completeAt, waterAfterFinalPurchase: completeAt === null ? 0 : limit - completeAt,
+      status: completeAt !== null ? 'completed' : blocked ? 'blocked' : 'cutoff', blocked,
       purchased: index, planned: plan.length, spent, ledger };
   }
   const wetPockets = (world) => {
@@ -105,10 +136,17 @@ try {
     parameters: { seedCount, seedRule, candidateLimits: [400, 600, 800] },
     caveat: 'Perfect collection, full returns, and purchases only at hopper. Omits discovery, excavation, travel, player decisions and elapsed time. Depth sums all pockets across map width; it is a supply bound, not a route.',
     currentLimit: DEMO_DELIVERY_LIMIT,
+    progression: { revealOrder: UPGRADE_REVEAL_ORDER,
+      rule: 'Start with one track; each purchased visible equipment level reveals another. Skip unmet prerequisites in the prefix and retain owned tracks. Maximum tracks retain their position; hidden scanner purchases do not count.' },
     visibleEquipmentTotal: UPGRADE_DEFINITIONS.filter(definition => !definition.hidden)
       .reduce((sum, definition) => sum + definition.costs.reduce((s, cost) => s + cost, 0), 0),
     candidateLimits: Object.fromEntries([400, 600, 800].map(limit => [limit,
       Object.fromEntries(Object.entries(plans).map(([name, plan]) => [name, purchasePlan(plan, limit)]))])),
+    unlockProgressionExamples: Object.fromEntries([400, 600, 800].map(limit => [limit,
+      Object.fromEntries(Object.entries(unlockExamples).map(([name, priorities]) => [name, {
+        priorities,
+        ...purchasePlan(priorities.flatMap(id => repeat(id, definitionFor(id).costs.length)), limit, priorities),
+      }]))])),
     supply: { dispersedSeeds: seedCount, seedRule, dryStarters: seeds.filter(seed => seed.starterDry).length,
       dryStarterExamples: seeds.filter(seed => seed.starterDry).slice(0, 8).map(seed => seed.seed),
       totalWater: summarize(seeds.map(seed => seed.totalWater)),
@@ -125,12 +163,20 @@ try {
   else {
     console.log(`Water Hole v${report.version} economy audit; ${report.createdAt}`);
     console.log(`Current cutoff: ${report.currentLimit}; all visible upgrades: ${report.visibleEquipmentTotal} credits.`);
-    console.log(`Current ${report.currentLimit}-water purchase plans:`);
+    console.log(`Reveal order: ${UPGRADE_REVEAL_ORDER.join(' → ')}.`);
+    console.log(`Current ${report.currentLimit}-water strict purchase plans (no skipped or substitute purchases):`);
     console.table(Object.entries(report.candidateLimits[report.currentLimit]).map(([plan, result]) => ({
       plan, returns: result.returns, 'final purchase at': result.completeAt ?? 'not completed',
       'water afterward': result.waterAfterFinalPurchase, purchases: `${result.purchased}/${result.planned}`,
+      constraint: result.blocked ? `${result.blocked.id}: ${result.blocked.reason}` : result.status,
     })));
-    console.log('Cutoff comparisons:');
+    console.log('Separate unlock progression examples (first affordable, revealed track in priority order):');
+    console.table(Object.entries(report.unlockProgressionExamples[report.currentLimit]).map(([plan, result]) => ({
+      plan, priorities: result.priorities.join(' → '), returns: result.returns,
+      purchases: `${result.purchased}/${result.planned}`, spent: result.spent,
+      'final purchase at': result.completeAt ?? 'not completed', status: result.status,
+    })));
+    console.log('Strict-plan cutoff comparisons (locked plans retain their original constraint):');
     console.table(Object.entries(report.candidateLimits).map(([cutoff, plans]) => ({
       cutoff, 'tank returns': plans['tank only'].returns,
       'after maximum tank': plans['tank only'].waterAfterFinalPurchase,

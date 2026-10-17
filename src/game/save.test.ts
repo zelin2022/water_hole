@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createSession, DEMO_DELIVERY_LIMIT, stepSession, type SessionOptions } from './session';
-import { collectIntoTank, buyUpgrade, upgradeStats } from './economy';
+import { collectIntoTank, UPGRADE_DEFINITIONS, upgradeStats, type UpgradeId } from './economy';
 import { totalWater } from './water';
 import { deserializeSession, serializeSession } from './save';
 import { setDevCredits, setOmniVision } from './dev-tools';
@@ -30,6 +30,18 @@ function createShallowSession(options: SessionOptions = {}): Session {
   session.explored = session.explored.slice(0, world.solid.length);
   session.initialWater = totalWater(world);
   return session;
+}
+
+/** Install save fixtures independently of shop progression while retaining their paid credit ledger. */
+function installFixtureEquipment(session: Session, id: UpgradeId, level = 1): void {
+  const definition = UPGRADE_DEFINITIONS.find(item => item.id === id)!;
+  const spent = definition.costs.slice(session.tank.upgrades[id], level).reduce((total, cost) => total + cost, 0);
+  session.tank.credits -= spent;
+  session.tank.upgrades[id] = level;
+  if (id === 'capacity') {
+    session.tank.capacity = upgradeStats(session.tank).capacity;
+    session.tank.upgraded = level > 0;
+  }
 }
 
 describe('compact deep-world saves', () => {
@@ -153,9 +165,9 @@ describe('compact deep-world saves', () => {
   it('preserves a spent double jump and wall-chain state across save/load', () => {
     const session = createSession({ seed: 42 });
     setDevCredits(session, 1000);
-    expect(buyUpgrade(session.tank, 'doubleJump')).toBe(true);
+    installFixtureEquipment(session, 'doubleJump');
     for (const id of ['jumpPower', 'climbSpeed'] as const) {
-      for (let level = 0; level < 7; level++) expect(buyUpgrade(session.tank, id)).toBe(true);
+      installFixtureEquipment(session, id, 7);
     }
     session.player.airJumpAvailable = false;
     session.player.wallJumpChain = true;
@@ -216,7 +228,7 @@ function stockedSession(waterDistribution?: SessionOptions['waterDistribution'])
   session.delivered = 90;
   session.tank.credits = 90;
   session.tank.water = 10;
-  buyUpgrade(session.tank, 'capacity');
+  installFixtureEquipment(session, 'capacity');
   session.explored[300] = 1;
   session.time = 9;
   session.sonar = { origin: {x:100,y:100}, startedAt:8,maxRadius:800 };
@@ -281,7 +293,7 @@ describe('expanded water tank saves', () => {
     for (const [water, unloading] of [[137.25, false], [200, false], [175.5, true]] as const) {
       const original = createShallowSession({ seed: 42 });
       setDevCredits(original, 1000);
-      for (let level = 0; level < 9; level++) expect(buyUpgrade(original.tank, 'capacity')).toBe(true);
+      installFixtureEquipment(original, 'capacity', 9);
       transferWorldWater(original, water + 50);
       original.delivered = 50;
       original.tank.credits += 50;
@@ -332,7 +344,7 @@ describe('lamp equipment saves', () => {
     setDevCredits(session, 1000);
     const base = upgradeStats(session.tank);
     for (let level = 1; level <= 2; level++) {
-      for (const id of lampIds) expect(buyUpgrade(session.tank, id)).toBe(true);
+      for (const id of lampIds) installFixtureEquipment(session, id, level);
       const restored = deserializeSession(serializeSession(session));
       expect(JSON.parse(serializeSession(restored)).version).toBe(2);
       expect(restored.tank).toEqual(session.tank);
@@ -351,7 +363,7 @@ describe('lamp equipment saves', () => {
 
   it.each([1, 2])('migrates earlier version %i saves to base lamps without replacing terrain, equipment or progress', version => {
     const session = stockedSession();
-    expect(buyUpgrade(session.tank, 'detector')).toBe(true);
+    installFixtureEquipment(session, 'detector');
     const earlier = JSON.parse(version === 1 ? serializeLegacySession(session) : serializeSession(session));
     for (const id of lampIds) delete earlier.session.tank.upgrades[id];
     const restored = deserializeSession(JSON.stringify(earlier));
@@ -464,7 +476,7 @@ describe('versioned local saves', () => {
   it('migrates remembered caves to dark caves while preserving every other saved field', () => {
     const session = stockedSession();
     setDevCredits(session, 90);
-    expect(buyUpgrade(session.tank, 'sonar')).toBe(true);
+    installFixtureEquipment(session, 'sonar');
     session.subsurfaceScan = { origin: { x: 180, y: 120 }, startedAt: 7, maxRadius: 600 };
     session.lastSubsurfaceScanAt = 7;
     session.tank.upgrades.subsurfaceScanner = 1;
@@ -505,7 +517,7 @@ describe('versioned local saves', () => {
   it('migrates earlier v1 saves without scanner metadata while preserving owned cave sonar and progress', () => {
     const session = stockedSession();
     setDevCredits(session, 90);
-    expect(buyUpgrade(session.tank, 'sonar')).toBe(true);
+    installFixtureEquipment(session, 'sonar');
     const earlier = JSON.parse(serializeLegacySession(session));
     delete earlier.session.tank.upgrades.subsurfaceScanner;
     delete earlier.session.subsurfaceScan;
@@ -646,7 +658,7 @@ describe('versioned local saves', () => {
     const session = stockedSession();
     setDevCredits(session, 1000);
     for (const [id, count] of [['digRadius', 7], ['digDamage', 3], ['digSpeed', 3]] as const) {
-      for (let level = 0; level < count; level++) expect(buyUpgrade(session.tank, id)).toBe(true);
+      installFixtureEquipment(session, id, count);
     }
     session.digCooldown = 0.14;
     session.strikeTime = 0.02;
@@ -667,7 +679,7 @@ describe('versioned local saves', () => {
     }
     const session = stockedSession();
     setDevCredits(session, 1000);
-    buyUpgrade(session.tank, 'digSpeed');
+    installFixtureEquipment(session, 'digSpeed');
     session.digCooldown = 0.44; session.strikeTime = 0.10;
     expect(deserializeSession(serializeSession(session)).digCooldown).toBe(0.44);
   });
@@ -681,7 +693,7 @@ describe('versioned local saves', () => {
   it('round-trips repeated credit grants, purchases, reductions and omni vision', () => {
     const session = stockedSession();
     setDevCredits(session, 1000);
-    buyUpgrade(session.tank, 'detector');
+    installFixtureEquipment(session, 'detector');
     setDevCredits(session, 2.5);
     setOmniVision(session, true);
     const restored = deserializeSession(serializeSession(session));

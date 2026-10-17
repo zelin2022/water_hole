@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { World } from './world';
-import { buyUpgrade, createTank, upgradeStats } from './economy';
+import { createTank, upgradeStats } from './economy';
 import {
   computeDaylight, createVision, pingSonar, sonarOpacity, sonarTravelDistance, updateVision,
   pingSubsurfaceScanner, subsurfaceScannerOpacity,
@@ -109,26 +109,24 @@ describe('local lamps and exploration', () => {
     ['torsoLamp', [35, 50], [32, 50]],
     ['headlampDepth', [85, 50], [92, 50]],
     ['headlampWidth', [71, 66], [70, 68]],
-  ] as const)('illuminates progressively farther cells only after each %s purchase', (id, first, second) => {
+  ] as const)('illuminates progressively farther cells at each %s level', (id, first, second) => {
     const world = undergroundRoom(140, 110), state = createVision(world), tank = createTank();
-    tank.credits = 105;
     const illuminate = () => updateVision(world, state, {
       position: { x: 202, y: 202 }, aim: { x: 500, y: 202 }, facing: 1, time: 0, ...upgradeStats(tank),
     });
     illuminate();
     for (const cell of [first, second]) expect(state.visible[world.index(cell[0], cell[1])]).toBe(0);
-    expect(buyUpgrade(tank, id)).toBe(true); illuminate();
+    tank.upgrades[id] = 1; illuminate();
     expect(state.visible[world.index(first[0], first[1])]).toBe(1);
     expect(state.visible[world.index(second[0], second[1])]).toBe(0);
-    expect(buyUpgrade(tank, id)).toBe(true); illuminate();
+    tank.upgrades[id] = 2; illuminate();
     expect(state.visible[world.index(second[0], second[1])]).toBe(1);
   });
 
   it('keeps maximum lamps blocked by terrain and sealed water hidden', () => {
     const world = undergroundRoom(140, 110), state = createVision(world), tank = createTank();
-    tank.credits = 1000;
     for (const id of ['torsoLamp', 'headlampWidth', 'headlampDepth'] as const) {
-      expect(buyUpgrade(tank, id)).toBe(true); expect(buyUpgrade(tank, id)).toBe(true);
+      tank.upgrades[id] = 2;
     }
     for (let y = 3; y < world.height - 3; y++) world.setSolid(65, y, true);
     world.water[world.index(66, 50)] = 1;

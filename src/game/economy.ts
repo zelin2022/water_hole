@@ -31,6 +31,10 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   { id: 'sonar', name: 'Cave sonar', description: 'Trace connected tunnel outlines; terrain blocks the pulse.', costs: [90] },
   { id: 'subsurfaceScanner', name: 'Subsurface scanner', description: 'Penetrate terrain to trace sealed cavities and water pockets.', costs: [30], hidden: true },
 ];
+export const UPGRADE_REVEAL_ORDER = [
+  'digRadius', 'digDamage', 'detector', 'climbSpeed', 'capacity', 'jumpPower', 'digSpeed',
+  'sonar', 'wallDig', 'doubleJump', 'headlampDepth', 'torsoLamp', 'detectorRange', 'headlampWidth',
+] as const satisfies readonly UpgradeId[];
 
 export interface Tank {
   capacity: number;
@@ -79,10 +83,31 @@ export function upgradeStats(tank: Tank) {
   };
 }
 
-/** Visibility is determined by progression before the current balance is considered. */
+/** Every purchased level of visible equipment contributes one reveal. */
+export function purchasedUpgradeCount(tank: Tank): number {
+  return UPGRADE_DEFINITIONS.reduce((count, definition) =>
+    count + (definition.hidden ? 0 : (tank.upgrades[definition.id] ?? 0)), 0);
+}
+
+/** Retain owned legacy tracks, including completed ones, without changing their equipment. */
+export function revealedUpgradeIds(tank: Tank): UpgradeId[] {
+  const eligible = UPGRADE_REVEAL_ORDER.filter(id => {
+    const definition = UPGRADE_DEFINITIONS.find(item => item.id === id)!;
+    return !definition.hidden && (!definition.requires || tank.upgrades[definition.requires] > 0);
+  });
+  const revealed = new Set<UpgradeId>(eligible.slice(0, 1 + purchasedUpgradeCount(tank)));
+  return UPGRADE_REVEAL_ORDER.filter(id => revealed.has(id) || tank.upgrades[id] > 0);
+}
+
+export function isUpgradeRevealed(tank: Tank, id: UpgradeId): boolean {
+  return revealedUpgradeIds(tank).includes(id);
+}
+
+/** Progression, prerequisites, and remaining levels are checked before the current balance. */
 export function upgradeAvailability(tank: Tank, id: UpgradeId): UpgradeAvailability {
   const definition = UPGRADE_DEFINITIONS.find(item => item.id === id);
-  if (!definition || definition.hidden || (definition.requires && !tank.upgrades[definition.requires])) return 'unavailable';
+  if (!definition || definition.hidden || !isUpgradeRevealed(tank, id)
+    || (definition.requires && !tank.upgrades[definition.requires])) return 'unavailable';
   const cost = definition.costs[tank.upgrades[id]];
   if (cost === undefined) return 'unavailable';
   return Number.isFinite(tank.credits) && tank.credits + CREDIT_EPSILON >= cost ? 'available' : 'unaffordable';

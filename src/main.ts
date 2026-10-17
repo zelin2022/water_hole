@@ -1,5 +1,5 @@
 import './style.css';
-import { buyUpgrade, upgradeAvailability, UPGRADE_DEFINITIONS, upgradeStats, type UpgradeId } from './game/economy';
+import { buyUpgrade, revealedUpgradeIds, upgradeAvailability, UPGRADE_DEFINITIONS, upgradeStats, type UpgradeId } from './game/economy';
 import { createSession, nearHopper, playerCenter, stepSession, type GameInput, type Session, type SessionOptions } from './game/session';
 import { deserializeSession, serializeSession } from './game/save';
 import { createVision, pingSonar, SONAR_COOLDOWN, updateVision } from './game/vision';
@@ -270,7 +270,8 @@ function statDescription(id: UpgradeId): string {
   }
 }
 function renderShop(): void {
-  el('panel').innerHTML = `${heading('WATER EXCHANGE / EQUIPMENT', 'Make the next trip easier', `${format(session.tank.credits)} credits available`)}<div class="upgrade-grid">${UPGRADE_DEFINITIONS.map(definition => {
+  el('panel').innerHTML = `${heading('WATER EXCHANGE / EQUIPMENT', 'Make the next trip easier', `${format(session.tank.credits)} credits available`)}<div class="upgrade-grid">${revealedUpgradeIds(session.tank).map(id => {
+    const definition = UPGRADE_DEFINITIONS.find(item => item.id === id)!;
     const availability = upgradeAvailability(session.tank, definition.id);
     if (availability === 'unavailable') return '';
     const level = session.tank.upgrades[definition.id], cost = definition.costs[level];
