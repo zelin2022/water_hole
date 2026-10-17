@@ -2,7 +2,7 @@
 
 ## Current status
 
-A local provisional demo build and Windows packaging route exist. They are for playtesting, not an approved Steam release. Rebuild packages from the tested revision before uploading. Steam account setup, real AppIDs/depot IDs, store assets, trailer, uploads, installation testing through Steam, and Valve review remain external release work. This repository has not created Steam applications or uploaded a build.
+A local demo build and inspected v0.1.28 release archives exist for Windows x64 and macOS arm64/x64. They still require native lifecycle testing and are not an approved Steam release. Rebuild packages if source changes before uploading. Steam account setup, real AppIDs/depot IDs, store assets, trailer, uploads, installation testing through Steam, and Valve review remain external release work. This repository has not created Steam applications or uploaded a build.
 
 Official documentation checked on 2026-10-15. Complete the current Steamworks dashboard checklists when preparing release.
 
@@ -10,7 +10,7 @@ Official documentation checked on 2026-10-15. Complete the current Steamworks da
 
 - [ ] Finalize comparison defaults, progression, presentation, and pacing toward the 2000-metre depth ending after playtesting.
 - [ ] Run `npm ci`, `npm test`, and `npm run build:release` on the release revision. Confirm `VITE_DEV_TOOLS` is disabled, with no overriding environment value enabling it. Verify that backtick cannot open a developer panel, New Game has no full-visibility checkbox, and saved omni-vision overrides cannot enable full visibility.
-- [ ] Build Windows with `npm run package:win:release`. Distribute the complete `release/Water Hole-win32-x64/` folder, including its runtime files; the executable alone is insufficient.
+- [x] Build Windows v0.1.28 with `npm run package:win:release` and inspect the release payload. `release/Water-Hole-v0.1.28-Windows-x64.zip` contains the complete `Water Hole-win32-x64/` folder and runtime files; the executable alone is insufficient.
 - [ ] Test the packaged app on a clean Windows installation: new game, controls, upgrades, save/load after relaunch, audio/display settings, and the stopped demo ending.
 - [ ] Build and test macOS natively before advertising macOS support:
 
@@ -21,7 +21,7 @@ npm run package:mac:release       # Apple Silicon / arm64
 npm run package:mac:x64:release   # Intel / x64, if supported for release
 ```
 
-The expected bundles are `release/Water Hole-darwin-arm64/Water Hole.app` and `release/Water Hole-darwin-x64/Water Hole.app`. Current packaging does not configure signing or notarization. macOS cross-packaging was blocked by Windows symlink privileges; no Mac package or Mac QA is claimed. Decide the supported architectures, complete the signing/distribution work appropriate for release, and test on the actual target hardware.
+The native commands produce `release/Water Hole-darwin-arm64/Water Hole.app` and `release/Water Hole-darwin-x64/Water Hole.app`. Prepared v0.1.28 ZIPs for both architectures are already available under `release/`. They were assembled from checksum-validated official Electron runtime archives, preserving framework links, Unix permissions, and native binaries, and passed independent structural inspection. Extract them on the Mac; they require macOS 13 or newer. Current packaging does not configure developer signing or notarization. Native Mac launch and lifecycle checks remain unverified. Decide the supported architectures, complete the signing/distribution work appropriate for release, and test on the actual target hardware. See [package evidence](DEMO_RELEASE.md#v0128-release-archives).
 
 ## Steam account and applications
 
