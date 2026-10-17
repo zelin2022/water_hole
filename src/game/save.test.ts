@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createSession, DEMO_DELIVERY_LIMIT, stepSession, type SessionOptions } from './session';
+import { createSession, stepSession, type SessionOptions } from './session';
 import { collectIntoTank, UPGRADE_DEFINITIONS, upgradeStats, type UpgradeId } from './economy';
 import { totalWater } from './water';
 import { deserializeSession, serializeSession } from './save';
-import { setDevCredits, setOmniVision } from './dev-tools';
+import { setDevCredits, setOmniVision, warpToDemoEnd } from './dev-tools';
 import { World } from './world';
 import type { Session } from './session';
 
@@ -45,19 +45,20 @@ function installFixtureEquipment(session: Session, id: UpgradeId, level = 1): vo
 }
 
 describe('compact deep-world saves', () => {
-  it('persists the 600-water cutoff for a new expedition', () => {
+  it('persists depth completion without a water-delivery cutoff for a new expedition', () => {
     const original = createSession({ seed: 42 });
-    expect(original.deliveryLimit).toBe(600);
+    expect(original.demoEnd).toEqual({ kind: 'depth' });
     const restored = deserializeSession(serializeSession(original));
-    expect(restored.deliveryLimit).toBe(600);
+    expect(restored.demoEnd).toEqual({ kind: 'depth' });
+    expect(restored).not.toHaveProperty('deliveryLimit');
     expect(restored.world.water).toEqual(original.world.water);
     expect(restored.initialWater).toBe(original.initialWater);
   });
 
-  it.each([1, 2])('keeps active and ended v%i saves without a limit on their original 400-water cutoff', version => {
-    for (const completed of [false, true]) {
+  it.each([1, 2])('migrates active v%i saves to depth while retaining completed legacy saves', version => {
+    for (const limit of [400, 600]) for (const completed of [false, true]) {
       const original = createSession({ seed: 42 });
-      const delivered = completed ? 400 : 399;
+      const delivered = completed ? limit : limit - 1;
       let remaining = delivered + 2;
       for (let index = 0; index < original.world.water.length && remaining > 0; index++) {
         const transferred = Math.min(remaining, original.world.water[index]);
@@ -70,25 +71,29 @@ describe('compact deep-world saves', () => {
       original.tank.water = 2;
       original.completed = completed;
       const data = JSON.parse(version === 1 ? serializeLegacySession(original) : serializeSession(original));
-      delete data.session.deliveryLimit;
+      delete data.session.demoEnd;
+      if (limit === 600) data.session.deliveryLimit = limit;
+      else delete data.session.deliveryLimit; // Missing pre-field limits mean 400.
       const restored = deserializeSession(JSON.stringify(data));
-      expect(restored.deliveryLimit).toBe(400);
+      const expectedEnd = completed ? { kind: 'legacy-delivery', limit } : { kind: 'depth' };
+      expect(restored.demoEnd).toEqual(expectedEnd);
+      expect(restored).not.toHaveProperty('deliveryLimit');
       expect(restored.completed).toBe(completed);
       expect(restored.delivered).toBe(delivered);
       expect(restored.tank).toEqual(original.tank);
       expect(restored.world.material.every((value, index) => value === original.world.material[index])).toBe(true);
       expect(restored.world.water.every((value, index) => value === original.world.water[index])).toBe(true);
       expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(original.initialWater, 5);
-      expect(deserializeSession(serializeSession(restored)).deliveryLimit).toBe(400);
+      expect(deserializeSession(serializeSession(restored)).demoEnd).toEqual(expectedEnd);
       const snapshot = serializeSession(restored);
       stepSession(restored, { left: false, right: false, up: false, down: false, jumpPressed: false,
         digging: false, aim: { x: 0, y: 0 }, collecting: false, depositPressed: true }, 0.1);
       if (completed) expect(serializeSession(restored)).toBe(snapshot);
       else {
-        expect(restored.completed).toBe(true);
-        expect(restored.delivered).toBe(400);
-        expect(restored.tank.water).toBe(1);
-        expect(restored.tank.credits).toBe(400);
+        expect(restored.completed).toBe(false);
+        expect(restored.delivered).toBe(limit + 1);
+        expect(restored.tank.water).toBe(0);
+        expect(restored.tank.credits).toBe(limit + 1);
         expect(totalWater(restored.world) + restored.tank.water + restored.delivered).toBeCloseTo(original.initialWater, 5);
       }
     }
@@ -96,17 +101,76 @@ describe('compact deep-world saves', () => {
 
   it('rejects invalid delivery limits and end states inconsistent with the saved cutoff', () => {
     for (const limit of [null, -1, 0, 399, 400.5, 599, 601, 1000000, '600']) {
-      expect(() => deserializeSession(corrupt(data => data.session.deliveryLimit = limit))).toThrow(/delivery limit/);
+      expect(() => deserializeSession(corrupt(data => { delete data.session.demoEnd; data.session.deliveryLimit = limit; }))).toThrow(/delivery limit/);
     }
     expect(() => deserializeSession(corrupt(data => {
-      data.session.deliveryLimit = 600; data.session.delivered = 400; data.session.completed = true;
+      delete data.session.demoEnd; data.session.deliveryLimit = 600; data.session.delivered = 400; data.session.completed = true;
     }))).toThrow(/demo end state/);
     expect(() => deserializeSession(corrupt(data => {
-      data.session.deliveryLimit = 400; data.session.delivered = 400; data.session.completed = false;
+      delete data.session.demoEnd; data.session.deliveryLimit = 400; data.session.delivered = 400; data.session.completed = false;
     }))).toThrow(/demo end state/);
     expect(() => deserializeSession(corrupt(data => {
-      data.session.deliveryLimit = 400; data.session.delivered = 401;
+      delete data.session.demoEnd; data.session.deliveryLimit = 400; data.session.delivered = 401;
     }))).toThrow(/progress ledger/);
+  });
+
+  it('allows depth saves above both former water limits while retaining strict resource accounting', () => {
+    const session = createSession({ seed: 42 });
+    let remaining = 800;
+    for (let index = 0; index < session.world.water.length && remaining > 0; index++) {
+      const amount = Math.min(remaining, session.world.water[index]);
+      session.world.water[index] -= amount; remaining -= amount;
+    }
+    session.delivered = 800; session.tank.credits = 800;
+    const restored = deserializeSession(serializeSession(session));
+    expect(restored.delivered).toBe(800);
+    expect(restored.completed).toBe(false);
+    expect(restored.demoEnd).toEqual({ kind: 'depth' });
+    const corruptCredits = JSON.parse(serializeSession(session));
+    corruptCredits.session.tank.credits = 801;
+    expect(() => deserializeSession(JSON.stringify(corruptCredits))).toThrow(/unearned credits/);
+    const lostWater = JSON.parse(serializeSession(session));
+    lostWater.session.delivered++;
+    expect(() => deserializeSession(JSON.stringify(lostWater))).toThrow(/water ledger mismatch/);
+  });
+
+  it('rejects malformed end rules and active legacy exemptions', () => {
+    for (const demoEnd of [null, {}, { kind: 'unknown' }, { kind: 'depth', limit: 600 },
+      { kind: 'legacy-delivery', limit: 500 }, { kind: 'legacy-delivery', limit: 400 }]) {
+      expect(() => deserializeSession(corrupt(data => data.session.demoEnd = demoEnd))).toThrow(/demo end/);
+    }
+    expect(() => deserializeSession(corrupt(data => data.session.completed = true))).toThrow(/demo end state/);
+  });
+
+  it('requires depth completion at the actual reachable bottom of a shallow world', () => {
+    const session = createShallowSession({ seed: 42 });
+    expect(warpToDemoEnd(session)).toBe(true);
+    const data = JSON.parse(serializeSession(session));
+    data.session.completed = false;
+    expect(() => deserializeSession(JSON.stringify(data))).toThrow(/demo end state/);
+    data.session.completed = true;
+    expect(deserializeSession(JSON.stringify(data)).world.height).toBe(256);
+  });
+
+  it('finishes an active pre-field save already at its shallow map bottom without changing resources', () => {
+    const session = createShallowSession({ seed: 42 });
+    expect(warpToDemoEnd(session)).toBe(true);
+    const earlier = JSON.parse(serializeSession(session));
+    delete earlier.session.demoEnd;
+    earlier.session.deliveryLimit = 600;
+    earlier.session.completed = false;
+    earlier.session.digCooldown = 0.3;
+    earlier.session.strikeTime = 0.1;
+    earlier.session.unloading = true;
+    const restored = deserializeSession(JSON.stringify(earlier));
+    expect(restored.completed).toBe(true);
+    expect(restored.demoEnd).toEqual({ kind: 'depth' });
+    expect(restored).toMatchObject({ digCooldown: 0, strikeTime: -1, lastStrike: null, unloading: false });
+    expect(restored.tank).toEqual(session.tank);
+    expect(restored.delivered).toBe(session.delivered);
+    expect(restored.world.water).toEqual(session.world.water);
+    expect(restored.world.material).toEqual(session.world.material);
+    expect(deserializeSession(serializeSession(restored)).completed).toBe(true);
   });
 
   it('round-trips a 2000-metre site well below the browser storage quota without quantizing water', () => {
@@ -751,12 +815,7 @@ describe('versioned local saves', () => {
 
   it('preserves the ended state', () => {
     const session = createShallowSession();
-    let remaining = DEMO_DELIVERY_LIMIT;
-    for (let i = 0; i < session.world.water.length && remaining > 0; i++) {
-      const amount = Math.min(remaining,session.world.water[i]);
-      session.world.water[i] -= amount; remaining -= amount;
-    }
-    session.delivered = DEMO_DELIVERY_LIMIT; session.completed = true;
+    expect(warpToDemoEnd(session)).toBe(true);
     expect(deserializeSession(serializeSession(session)).completed).toBe(true);
   });
 

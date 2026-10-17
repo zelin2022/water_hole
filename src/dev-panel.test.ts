@@ -39,11 +39,20 @@ describe('developer ending control', () => {
 
   it('reports failure without telling the host to change screens', () => {
     const session = createSession({ seed: 42 });
-    session.world.water.fill(0);
+    // Reinforced terrain across the bottom leaves no safe destination.
+    for (let y = session.world.height - 9; y < session.world.height - 1; y++) {
+      for (let x = 1; x < session.world.width - 1; x++) {
+        const index = session.world.index(x, y);
+        session.world.water[index] = 0;
+        session.world.setMaterial(x, y, 3);
+      }
+    }
+    const before = JSON.stringify(session);
     const panel = setup(session);
     panel.clickEnd();
     expect(session.completed).toBe(false);
     expect(panel.changed).not.toHaveBeenCalled();
-    expect(panel.feedback.textContent).toContain('Not enough water');
+    expect(panel.feedback.textContent).toContain('No safe space at the bottom');
+    expect(JSON.stringify(session)).toBe(before);
   });
 });

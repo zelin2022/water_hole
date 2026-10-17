@@ -322,7 +322,7 @@ describe('equipment purchases', () => {
     expect(upgradeStats(tank).digWindup).toBe(0.04);
   });
 
-  it('fits a maximum-radius showcase and basic utility before the 600-water wall while keeping further mining a choice', () => {
+  it('fits a maximum-radius showcase and basic utility within a 599-credit budget', () => {
     const tank = createTank(); tank.credits = 599;
     for (const id of ['digRadius', 'capacity', 'wallDig'] as const) {
       const levels = id === 'capacity' ? 1 : UPGRADE_DEFINITIONS.find(definition => definition.id === id)!.costs.length;

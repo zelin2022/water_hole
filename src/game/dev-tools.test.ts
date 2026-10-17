@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buyUpgrade, depositAtHopper } from './economy';
-import { createSession, DEMO_DELIVERY_LIMIT, nearHopper, stepSession, type GameInput, type Session } from './session';
+import { createSession, nearHopper, stepSession, type GameInput, type Session } from './session';
 import { totalWater } from './water';
 import { World } from './world';
 import { deserializeSession, serializeSession } from './save';
@@ -38,9 +38,8 @@ function smallStockedSession(): Session {
 }
 
 describe('provisional development controls', () => {
-  it.each([400, 600])('warps to the %i-water ending by transferring existing water, with a valid saved ledger', deliveryLimit => {
-    const session = smallStockedSession();
-    session.deliveryLimit = deliveryLimit;
+  it('warps to the map bottom without selling, deleting, or moving water, with a valid saved ledger', () => {
+    const session = createSession({ seed: 42 });
     stockTank(session, 13);
     session.delivered += depositAtHopper(session.tank, session.hopper, session.hopper, 0);
     stockTank(session, 10);
@@ -50,23 +49,31 @@ describe('provisional development controls', () => {
     session.digCooldown = 0.3;
     session.lastStrike = { center: { x: 600, y: 700 }, damaged: 2, removed: 1, time: session.time };
     session.unloading = true;
-    const terrain = session.world.solid.slice();
+    const water = session.world.water.slice();
+    const material = session.world.material.slice();
     const upgrades = { ...session.tank.upgrades };
-    const player = { ...session.player };
+    const tankWater = session.tank.water;
+    const delivered = session.delivered;
     const credits = session.tank.credits;
     const adjustment = session.devCreditAdjustment;
-    const needed = deliveryLimit - session.delivered;
 
     expect(warpToDemoEnd(session)).toBe(true);
     expect(session.completed).toBe(true);
-    expect(session.delivered).toBe(deliveryLimit);
-    expect(session.tank.water).toBe(0);
-    expect(session.tank.credits).toBe(credits + needed);
+    expect(session.delivered).toBe(delivered);
+    expect(session.tank.water).toBe(tankWater);
+    expect(session.tank.credits).toBe(credits);
     expect(session.devCreditAdjustment).toBe(adjustment);
     expect(totalWater(session.world) + session.tank.water + session.delivered).toBeCloseTo(session.initialWater, 5);
-    expect(session.world.solid).toEqual(terrain);
+    expect(session.world.water).toEqual(water);
+    expect(session.world.material.every((value, index) => material[index] !== 3 || value === 3)).toBe(true);
     expect(session.tank.upgrades).toEqual(upgrades);
-    expect(session.player).toEqual(player);
+    expect(session.player.y).toBe((session.world.height - 1) * session.world.cellSize - session.player.height);
+    expect(session.player).toMatchObject({ vx: 0, vy: 0, grounded: true, wall: 0,
+      suppressedWall: 0, wallJumpTime: 0, airJumpAvailable: true, wallJumpChain: false });
+    for (let row = 0; row < session.world.height; row++) {
+      expect(session.world.isSolid(0, row)).toBe(true);
+      expect(session.world.isSolid(session.world.width - 1, row)).toBe(true);
+    }
     expect(session.strikeTime).toBe(-1);
     expect(session.digCooldown).toBe(0);
     expect(session.lastStrike).toBeNull();
@@ -78,29 +85,35 @@ describe('provisional development controls', () => {
     expect(JSON.stringify(session)).toBe(ended);
   });
 
-  it('uses only the needed tank water when already near the ending', () => {
-    const session = smallStockedSession();
-    stockTank(session, session.deliveryLimit - 5);
-    session.delivered += depositAtHopper(session.tank, session.hopper, session.hopper, 0);
-    stockTank(session, 10);
-    const water = session.world.water.slice();
-    const credits = session.tank.credits;
+  it('prefers an existing dry bottom cave without changing terrain in a shallow saved site', () => {
+    const session = createSession({ seed: 42 });
+    session.world = new World(64, 64);
+    session.explored = new Uint8Array(session.world.water.length);
+    session.player.x = 80;
+    session.initialWater = 0;
+    const terrain = session.world.solid.slice();
     expect(warpToDemoEnd(session)).toBe(true);
-    expect(session.world.water).toEqual(water);
-    expect(session.tank.water).toBe(5);
-    expect(session.tank.credits).toBe(credits + 5);
-    expect(totalWater(session.world) + session.tank.water + session.delivered).toBeCloseTo(session.initialWater, 5);
+    expect(session.world.solid).toEqual(terrain);
+    expect(session.player.y).toBe(220);
+    expect(session.completed).toBe(true);
+    expect(deserializeSession(serializeSession(session)).completed).toBe(true);
   });
 
-  it('leaves a depleted fixture untouched when it cannot fund the ending', () => {
-    const session = createSession();
-    session.world = new World(8, 8);
-    session.world.water[session.world.index(2, 2)] = 3;
-    session.tank.water = 4;
-    session.delivered = 10;
-    session.initialWater = 17;
+  it('fails transactionally when water blocks every possible bottom destination', () => {
+    const session = smallStockedSession();
     session.strikeTime = 0.1;
     session.unloading = true;
+    const before = JSON.stringify(session);
+    expect(warpToDemoEnd(session)).toBe(false);
+    expect(JSON.stringify(session)).toBe(before);
+  });
+
+  it('rejects a reinforced bottom without damaging its foundation', () => {
+    const session = createSession();
+    session.world = new World(32, 64);
+    for (let row = 55; row < 63; row++) for (let column = 1; column < 31; column++) {
+      session.world.setMaterial(column, row, 3);
+    }
     const before = JSON.stringify(session);
     expect(warpToDemoEnd(session)).toBe(false);
     expect(JSON.stringify(session)).toBe(before);
@@ -261,7 +274,6 @@ describe('provisional development controls', () => {
   it('keeps an ended demo frozen even when development controls are called', () => {
     const session = createSession();
     session.completed = true;
-    session.delivered = DEMO_DELIVERY_LIMIT;
     const before = JSON.stringify(session);
     expect(setDevCredits(session, 500)).toBe(false);
     expect(setOmniVision(session, true)).toBe(false);

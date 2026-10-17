@@ -1,6 +1,6 @@
 import './style.css';
 import { buyUpgrade, revealedUpgradeIds, upgradeAvailability, UPGRADE_DEFINITIONS, upgradeStats, type UpgradeId } from './game/economy';
-import { createSession, nearHopper, playerCenter, stepSession, type GameInput, type Session, type SessionOptions } from './game/session';
+import { createSession, nearHopper, playerCenter, playerDepth, stepSession, type GameInput, type Session, type SessionOptions } from './game/session';
 import { deserializeSession, serializeSession } from './game/save';
 import { createVision, pingSonar, SONAR_COOLDOWN, updateVision } from './game/vision';
 import { ACTION_LABELS, DEFAULT_SETTINGS, keyLabel, readSettings, rebind, RESOLUTIONS, type Action } from './settings';
@@ -450,7 +450,7 @@ function updateHUD(): void {
   el('credits').innerHTML = `${format(tank.credits)}<span> cr</span>`;
   const nearby = nearHopper(session); el('shop-open').hidden = screen !== 'playing' || !nearby;
   el('machine-status').textContent = session.unloading ? 'Transferring water…' : `${keyLabel(settings.bindings.unload)} unload · ${keyLabel(settings.bindings.shop)} equipment`;
-  el('field-label').textContent = player.wall ? 'WALL ATTACHED' : `DEPTH ${Math.max(0, Math.floor((player.y - session.surfaceY) / 4))} m`;
+  el('field-label').textContent = player.wall ? 'WALL ATTACHED' : `DEPTH ${Math.floor(playerDepth(session))} m`;
   el('field-hint').textContent = session.unloading ? 'Unloading into the hopper. Move away or press unload again to stop.' : player.wall && !tank.upgrades.wallDig ? `${keyLabel(settings.bindings.up)} / ${keyLabel(settings.bindings.down)} climb up / down. Jump or move away to detach. A work harness unlocks wall digging.` : tank.water >= tank.capacity - 0.01 ? 'Tank full. Return to the water exchange.' : nearby ? 'Water earns credits here. Buy equipment to improve your next trip.' : 'Hold to strike terrain. Collect exposed water into your tank.';
   const cooldown = Math.max(0, SONAR_COOLDOWN - (session.time - vision.lastSonarAt));
   const waterLayout = session.options.waterDistribution === 'depth-weighted' ? 'THREE POCKET SIZES'
@@ -472,7 +472,7 @@ function tick(time: number): void {
     if (pressed.has('unload') && !nearHopper(session)) notice('Water can only be released at the hopper.');
     const beforeStrike = session.lastStrike, beforeWater = session.tank.water, beforeDelivered = session.delivered;
     stepSession(session, input, STEP);
-    if (session.lastStrike !== beforeStrike) { audio.play('strike'); if (session.lastStrike?.removed) audio.play('break'); }
+    if (session.lastStrike && session.lastStrike !== beforeStrike) { audio.play('strike'); if (session.lastStrike.removed) audio.play('break'); }
     if (session.tank.water > beforeWater) audio.play('collect'); if (session.delivered > beforeDelivered) audio.play('unload');
     pressed.clear(); accumulated -= STEP;
     if (session.completed) { audio.play('end'); saveRun(false); changeScreen('ended'); }
@@ -483,7 +483,7 @@ function tick(time: number): void {
       torsoRadius, headlampRange, headlampHalfAngle, terrainRevealCells, bodyBounds: session.player });
     lastVisionAt = session.time; lastTerrainVersion = session.world.terrainVersion;
   }
-  audio.setScene(Math.max(0, (session.player.y - session.surfaceY) / session.world.cellSize),
+  audio.setScene(playerDepth(session),
     session.tank.water / session.tank.capacity);
   renderer.render(session, aim, screen === 'playing' && down('collect'), vision);
   if (hasRun && screen === 'playing' && session.time - lastAutoSaveAt >= 30) saveRun(false);

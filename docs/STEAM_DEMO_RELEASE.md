@@ -8,7 +8,7 @@ Official documentation checked on 2026-10-15. Complete the current Steamworks da
 
 ## Local release candidate
 
-- [ ] Finalize comparison defaults, progression, presentation, and the delivery cutoff after playtesting.
+- [ ] Finalize comparison defaults, progression, presentation, and pacing toward the 2000-metre depth ending after playtesting.
 - [ ] Run `npm ci`, `npm test`, and `npm run build:release` on the release revision. Confirm `VITE_DEV_TOOLS` is disabled, with no overriding environment value enabling it. Verify that backtick cannot open a developer panel, New Game has no full-visibility checkbox, and saved omni-vision overrides cannot enable full visibility.
 - [ ] Build Windows with `npm run package:win:release`. Distribute the complete `release/Water Hole-win32-x64/` folder, including its runtime files; the executable alone is insufficient.
 - [ ] Test the packaged app on a clean Windows installation: new game, controls, upgrades, save/load after relaunch, audio/display settings, and the stopped demo ending.

@@ -1,4 +1,4 @@
-import type { Session } from './game/session';
+import { demoDepthLimit, playerDepth, type Session } from './game/session';
 import { APP_VERSION } from './release-info';
 
 /** A previewable, copyable report. This neither reads personal data nor sends anything. */
@@ -10,11 +10,14 @@ export function formatBugReport(session: Session | null, platform: string): stri
       `Map seed: ${session.seed}`,
       `Map: ${session.world.width} × ${session.world.height} cells; ${session.world.cellSize} px/cell`,
       `Water layout: ${session.options.waterDistribution}`,
-      `Depth: ${Math.max(0, Math.floor((session.player.y - session.surfaceY) / 4))} m`,
+      `Depth: ${Math.floor(playerDepth(session))} m`,
       `Position: ${session.player.x.toFixed(1)}, ${session.player.y.toFixed(1)}`,
       `Play time: ${session.time.toFixed(1)} s`,
       `Tank: ${session.tank.water.toFixed(0)} / ${session.tank.capacity}`,
-      `Delivered: ${session.delivered.toFixed(2)} / ${session.deliveryLimit}`,
+      `Delivered: ${session.delivered.toFixed(2)}`,
+      session.demoEnd.kind === 'depth'
+        ? `Demo boundary: ${demoDepthLimit(session)} m depth`
+        : `Demo boundary: legacy ${session.demoEnd.limit} water delivered`,
       `Credits: ${session.tank.credits.toFixed(2)}`,
       `Completed: ${session.completed ? 'yes' : 'no'}`,
       `Equipment: ${Object.entries(session.tank.upgrades).map(([id, level]) => `${id}: ${level}`).join(', ')}`,

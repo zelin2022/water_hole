@@ -14,8 +14,10 @@ export const COLLECTION_RADIUS = 28;
 export const HOPPER_RANGE = 96;
 /** Starter rate retained for callers; actual unloading uses the installed tank. */
 export const UNLOAD_RATE = BASE_UNLOAD_RATE;
-export const DEMO_DELIVERY_LIMIT = 600;
-export const LEGACY_DEMO_DELIVERY_LIMIT = 400;
+export const DEMO_DEPTH_LIMIT = 2000;
+
+/** Historical delivery endings are retained only for already completed saves. */
+export type DemoEnd = { kind: 'depth' } | { kind: 'legacy-delivery'; limit: 400 | 600 };
 
 export interface GameInput extends PlayerInput {
   digging: boolean;
@@ -45,8 +47,7 @@ export interface Session {
   options: Required<SessionOptions>;
   surfaceY: number;
   delivered: number;
-  /** Retain each expedition's ending wall when release balancing changes. */
-  deliveryLimit: number;
+  demoEnd: DemoEnd;
   /** Signed credit-only changes made by provisional development controls. */
   devCreditAdjustment: number;
   time: number;
@@ -79,7 +80,7 @@ export function createSession(options: SessionOptions = {}): Session {
     seed,
     options: { seed, caveMemory: 'sonar', headlamp: 'mouse', waterDistribution,
       debugVision: options.debugVision ?? false, stepHeightCells: DEFAULT_STEP_HEIGHT_CELLS },
-    delivered: 0, deliveryLimit: DEMO_DELIVERY_LIMIT, devCreditAdjustment: 0, time: 0, completed: false,
+    delivered: 0, demoEnd: { kind: 'depth' }, devCreditAdjustment: 0, time: 0, completed: false,
     initialWater: totalWater(site.world),
     digCooldown: 0, strikeTime: -1, lastStrike: null,
     unloading: false, facing: 1,
@@ -92,6 +93,31 @@ export function createSession(options: SessionOptions = {}): Session {
 
 export function playerCenter(session: Session): Point {
   return { x: session.player.x + session.player.width / 2, y: session.player.y + session.player.height / 2 };
+}
+
+/** Use the same player-top measure as the HUD, without display rounding. */
+export function playerDepth(session: Session): number {
+  return Math.max(0, (session.player.y - session.surfaceY) / session.world.cellSize);
+}
+
+/** Preserved shallow sites end at their own floor rather than an unreachable depth. */
+export function demoDepthLimit(session: Session): number {
+  const reachableDepth = ((session.world.height - 1) * session.world.cellSize
+    - session.player.height - session.surfaceY) / session.world.cellSize;
+  return Math.min(DEMO_DEPTH_LIMIT, Math.max(1, reachableDepth));
+}
+
+export function hasReachedDemoDepth(session: Session): boolean {
+  return session.demoEnd.kind === 'depth' && playerDepth(session) >= demoDepthLimit(session) - 1e-8;
+}
+
+/** Freeze pending interactions without changing the world or resource ledger. */
+export function finishDemo(session: Session): void {
+  session.completed = true;
+  session.digCooldown = 0;
+  session.strikeTime = -1;
+  session.lastStrike = null;
+  session.unloading = false;
 }
 
 export function nearHopper(session: Session): boolean {
@@ -128,6 +154,10 @@ function stepDigging(session: Session, input: GameInput, dt: number): void {
 
 export function stepSession(session: Session, input: GameInput, dt: number): void {
   if (!Number.isFinite(dt) || dt <= 0 || session.completed) return;
+  if (hasReachedDemoDepth(session)) {
+    finishDemo(session);
+    return;
+  }
   session.time += dt;
   if (input.left !== input.right) session.facing = input.right ? 1 : -1;
   stepDigging(session, input, dt);
@@ -135,6 +165,10 @@ export function stepSession(session: Session, input: GameInput, dt: number): voi
   stepPlayer(session.world, session.player, input, dt, {
     ...upgradeStats(session.tank), stepHeightCells: session.options.stepHeightCells,
   });
+  if (hasReachedDemoDepth(session)) {
+    finishDemo(session);
+    return;
+  }
   stepWater(session.world, dt);
   const center = playerCenter(session);
   if (input.collecting) collectIntoTank(session.world, session.tank, center, COLLECTION_RADIUS, dt * 36);
@@ -143,14 +177,8 @@ export function stepSession(session: Session, input: GameInput, dt: number): voi
   else if (input.depositPressed) session.unloading = !session.unloading;
   if (session.unloading) {
     session.delivered += depositAtHopper(session.tank, center, session.hopper, HOPPER_RANGE,
-      Math.min(dt * upgradeStats(session.tank).unloadRate, session.deliveryLimit - session.delivered));
+      dt * upgradeStats(session.tank).unloadRate);
     if (session.tank.water <= 1e-8) session.unloading = false;
-  }
-  if (session.delivered >= session.deliveryLimit - 1e-8) {
-    session.delivered = session.deliveryLimit;
-    session.completed = true;
-    session.unloading = false;
-    return;
   }
   if (nearby && (input.purchase || input.upgradePressed)) buyUpgrade(session.tank, input.purchase ?? 'capacity');
 }

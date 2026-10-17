@@ -20,7 +20,9 @@ describe('copyable bug reports', () => {
     expect(report).toContain('Depth: 108 m');
     expect(report).toContain('Play time: 125.8 s');
     expect(report).toContain('Tank: 13 / 20');
-    expect(report).toContain('Delivered: 72.00 / 600');
+    expect(report).toContain('Delivered: 72.00\n');
+    expect(report).toContain('Demo boundary: 2000 m depth');
+    expect(report).not.toContain('/ 600');
     expect(report).toContain('Credits: 32');
     expect(report).toContain('digRadius: 3');
     expect(report).toContain('What happened:');

@@ -3,7 +3,7 @@ import { World } from './world';
 import { createTank, upgradeStats } from './economy';
 import { createPlayer } from './player';
 import { totalWater } from './water';
-import { createSession, DEMO_DELIVERY_LIMIT, stepSession, type GameInput, type Session } from './session';
+import { createSession, DEMO_DEPTH_LIMIT, demoDepthLimit, hasReachedDemoDepth, playerDepth, stepSession, type GameInput, type Session } from './session';
 
 const idle: GameInput = {
   left: false, right: false, up: false, down: false, jumpPressed: false,
@@ -49,42 +49,116 @@ function fullTankAtLevel(level: number): Session {
   return session;
 }
 
+function bottomFixture(height = 2053): Session {
+  const session = fixture();
+  session.world = new World(64, height, 4);
+  session.surfaceY = 176;
+  session.player = createPlayer(72, (height - 1) * 4 - 32);
+  session.explored = new Uint8Array(session.world.solid.length);
+  session.initialWater = 0;
+  return session;
+}
+
 describe('demo session', () => {
-  it('gives new expeditions a 600-water window to use the completed tank track', () => {
+  it('ends new expeditions at 2000 metres of player-top HUD depth', () => {
+    const session = createSession();
+    expect(session.demoEnd).toEqual({ kind: 'depth' });
+    expect(DEMO_DEPTH_LIMIT).toBe(2000);
+    expect(demoDepthLimit(session)).toBe(2000);
+    expect(playerDepth(session)).toBe(0);
+    expect(hasReachedDemoDepth(session)).toBe(false);
+  });
+
+  it('keeps earning and conserving water beyond the former delivery cutoff', () => {
     const session = fullTankAtLevel(9);
-    expect(session.deliveryLimit).toBe(600);
-    session.delivered = 280;
+    session.delivered = 580;
     session.tank.credits = 10;
     session.initialWater += session.delivered;
     advanceExact(session, 1.6, 1 / 120, { depositPressed: true });
-    expect(session.delivered).toBeCloseTo(480, 6);
+    expect(session.delivered).toBeCloseTo(780, 6);
     expect(session.tank.water).toBeCloseTo(0, 6);
     expect(session.completed).toBe(false);
     expect(session.tank.credits).toBeCloseTo(210, 6);
     session.tank.water = 200;
     session.initialWater += 200;
     advanceExact(session, 1.6, 1 / 120, { depositPressed: true });
-    expect(session.delivered).toBe(600);
-    expect(session.tank.water).toBeCloseTo(80, 6);
-    expect(session.tank.credits).toBeCloseTo(330, 6);
-    expect(session.completed).toBe(true);
+    expect(session.delivered).toBeCloseTo(980, 6);
+    expect(session.tank.water).toBeCloseTo(0, 6);
+    expect(session.tank.credits).toBeCloseTo(410, 6);
+    expect(session.completed).toBe(false);
     expect(totalWater(session.world) + session.tank.water + session.delivered).toBeCloseTo(session.initialWater, 5);
+  });
+
+  it('keeps a completed historical delivery-ending expedition frozen', () => {
+    const session = fullTankAtLevel(9);
+    session.demoEnd = { kind: 'legacy-delivery', limit: 400 };
+    session.completed = true;
+    session.delivered = 400;
+    session.initialWater += session.delivered;
     const snapshot = JSON.stringify(session);
-    stepSession(session, { ...idle, collecting: true, purchase: 'capacity', depositPressed: true }, 1);
+    stepSession(session, { ...idle, digging: true, collecting: true, depositPressed: true, purchase: 'digRadius' }, 1);
     expect(JSON.stringify(session)).toBe(snapshot);
   });
 
-  it('uses a legacy expedition\'s own 400-water cutoff rather than the new default', () => {
-    const session = fullTankAtLevel(9);
-    session.deliveryLimit = 400;
-    session.delivered = 399.9;
-    session.initialWater += session.delivered;
-    stepSession(session, { ...idle, depositPressed: true }, 0.05);
-    expect(session.delivered).toBe(400);
-    expect(session.tank.water).toBeCloseTo(199.9, 6);
-    expect(session.tank.credits).toBeCloseTo(0.1, 6);
+  it('does not end on rounded HUD depth before the actual 2000-metre threshold', () => {
+    const session = bottomFixture();
+    session.player.y -= 0.4;
+    expect(Math.round(playerDepth(session))).toBe(2000);
+    expect(hasReachedDemoDepth(session)).toBe(false);
+    stepSession(session, idle, 0.001);
+    expect(session.completed).toBe(false);
+  });
+
+  it('ends at the exact reachable floor of preserved shallow worlds', () => {
+    const session = bottomFixture(253);
+    expect(demoDepthLimit(session)).toBe(200);
+    expect(playerDepth(session)).toBe(200);
+    expect(hasReachedDemoDepth(session)).toBe(true);
+    stepSession(session, idle, 1 / 60);
     expect(session.completed).toBe(true);
-    expect(totalWater(session.world) + session.tank.water + session.delivered).toBeCloseTo(session.initialWater, 5);
+  });
+
+  it('finishes before any gameplay at an already reached bottom and clears pending actions', () => {
+    const session = bottomFixture();
+    session.tank.water = 20;
+    session.tank.credits = 100;
+    session.initialWater = 20;
+    session.hopper = { x: 80, y: session.player.y + 16 };
+    session.unloading = true;
+    session.digCooldown = 0.3;
+    session.strikeTime = 0.1;
+    session.lastStrike = { center: session.hopper, damaged: 1, removed: 0, time: 0 };
+    const player = { ...session.player };
+    stepSession(session, { ...idle, right: true, digging: true, collecting: true, purchase: 'digRadius' }, 1 / 60);
+    expect(session.completed).toBe(true);
+    expect(session.player).toEqual(player);
+    expect(session.time).toBe(0);
+    expect(session).toMatchObject({ unloading: false, digCooldown: 0, strikeTime: -1, lastStrike: null, delivered: 0 });
+    expect(session.tank).toMatchObject({ water: 20, credits: 100 });
+    expect(session.tank.upgrades.digRadius).toBe(0);
+    const snapshot = JSON.stringify(session);
+    stepSession(session, { ...idle, right: true, digging: true, collecting: true, purchase: 'digRadius' }, 1);
+    expect(JSON.stringify(session)).toBe(snapshot);
+  });
+
+  it('ends after crossing the bottom during movement before collection, unloading or purchases', () => {
+    const session = bottomFixture();
+    session.player.y -= 1;
+    session.player.vy = 420;
+    session.hopper = { x: 80, y: session.player.y + 16 };
+    session.tank.water = 5;
+    session.tank.credits = 100;
+    session.world.water[session.world.index(22, session.world.height - 2)] = 1;
+    session.initialWater = 6;
+    session.unloading = true;
+    stepSession(session, { ...idle, collecting: true, purchase: 'digRadius' }, 1 / 60);
+    expect(playerDepth(session)).toBe(2000);
+    expect(session.completed).toBe(true);
+    expect(session).toMatchObject({ unloading: false, digCooldown: 0, strikeTime: -1, lastStrike: null, delivered: 0 });
+    expect(session.tank).toMatchObject({ water: 5, credits: 100 });
+    expect(session.tank.upgrades.digRadius).toBe(0);
+    expect(totalWater(session.world)).toBe(1);
+    expect(totalWater(session.world) + session.tank.water + session.delivered).toBe(session.initialWater);
   });
 
   it('starts separate cave-sonar and reserved subsurface-scanner pulse clocks', () => {
@@ -116,7 +190,7 @@ describe('demo session', () => {
       expect(repeated.world.solid.every((value, index) => value === session.world.solid[index])).toBe(true);
       expect(repeated.world.water.every((value, index) => value === session.world.water[index])).toBe(true);
       expect(totalWater(session.world) + session.tank.water + session.delivered).toBe(session.initialWater);
-      expect(session.initialWater).toBeGreaterThan(DEMO_DELIVERY_LIMIT);
+      expect(session.initialWater).toBeGreaterThan(600);
     }
   });
 
@@ -142,7 +216,7 @@ describe('demo session', () => {
     const session = createSession({ seed: 123, caveMemory: 'sonar', headlamp: 'mouse' });
     expect(session.seed).toBe(123);
     expect(session.options).toMatchObject({ caveMemory: 'sonar', headlamp: 'mouse' });
-    expect(session.initialWater).toBeGreaterThan(DEMO_DELIVERY_LIMIT);
+    expect(session.initialWater).toBeGreaterThan(600);
     expect(session.explored.length).toBe(session.world.solid.length);
     expect(session.completed).toBe(false);
     const repeated = createSession({ seed: 123 });
@@ -207,19 +281,17 @@ describe('demo session', () => {
     expect(totalWater(session.world) + session.tank.water + session.delivered).toBeCloseTo(session.initialWater, 5);
   });
 
-  it.each([0, 4, 9])('clamps fast level-%i unloading at the demo cutoff and freezes remaining water', level => {
+  it.each([0, 4, 9])('continues fast level-%i unloading past the retired demo cutoff', level => {
     const session = fullTankAtLevel(level);
-    session.delivered = DEMO_DELIVERY_LIMIT - 0.1;
+    session.delivered = 599.9;
     session.initialWater += session.delivered;
     stepSession(session, { ...idle, depositPressed: true }, 0.05);
-    expect(session.delivered).toBe(DEMO_DELIVERY_LIMIT);
-    expect(session.tank.water).toBeCloseTo(session.tank.capacity - 0.1, 6);
-    expect(session.tank.credits).toBeCloseTo(0.1, 6);
-    expect(session.completed).toBe(true);
+    const transferred = upgradeStats(session.tank).unloadRate * 0.05;
+    expect(session.delivered).toBeCloseTo(599.9 + transferred, 6);
+    expect(session.tank.water).toBeCloseTo(session.tank.capacity - transferred, 6);
+    expect(session.tank.credits).toBeCloseTo(transferred, 6);
+    expect(session.completed).toBe(false);
     expect(totalWater(session.world) + session.tank.water + session.delivered).toBeCloseTo(session.initialWater, 5);
-    const snapshot = JSON.stringify(session);
-    stepSession(session, { ...idle, depositPressed: true, collecting: true, purchase: 'capacity' }, 1);
-    expect(JSON.stringify(session)).toBe(snapshot);
   });
 
   it('keeps collection at 36 water per second across all ten tank sizes', () => {
@@ -245,19 +317,6 @@ describe('demo session', () => {
     expect(session.unloading).toBe(false);
     expect(session.tank.capacity).toBe(20);
     expect(session.tank.credits).toBeCloseTo(102.5, 6);
-  });
-
-  it('clamps the final transfer to the demo wall then freezes gameplay', () => {
-    const session = fixture(); session.delivered = DEMO_DELIVERY_LIMIT - 0.1;
-    session.tank.water = 20;
-    stepSession(session, { ...idle, depositPressed: true }, 1 / 60);
-    expect(session.delivered).toBe(DEMO_DELIVERY_LIMIT);
-    expect(session.tank.water).toBeCloseTo(19.9, 6);
-    expect(session.tank.credits).toBeCloseTo(0.1, 6);
-    expect(session.completed).toBe(true);
-    const snapshot = JSON.stringify(session);
-    stepSession(session, { ...idle, right: true, digging: true, collecting: true, purchase: 'capacity' }, 1);
-    expect(JSON.stringify(session)).toBe(snapshot);
   });
 
   it('waits for pick wind-up and applies isolated periodic impacts', () => {

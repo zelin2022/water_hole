@@ -1,5 +1,4 @@
-import { HOPPER_RANGE, type Session } from './session';
-import { totalWater } from './water';
+import { demoDepthLimit, finishDemo, HOPPER_RANGE, type Session } from './session';
 
 export const MAX_DEV_CREDITS = 1_000_000_000;
 
@@ -18,29 +17,49 @@ export function setOmniVision(session: Session, enabled: boolean): boolean {
   return true;
 }
 
-/** Exercise the real ending using existing water, keeping saved resource ledgers valid. */
+/** Exercise the depth ending without changing any water or credit ledger. */
 export function warpToDemoEnd(session: Session): boolean {
-  if (session.completed) return false;
-  const needed = session.deliveryLimit - session.delivered;
-  const available = totalWater(session.world) + session.tank.water;
-  if (!Number.isFinite(needed) || needed <= 0 || !Number.isFinite(available) || available < needed) return false;
+  if (session.completed || session.demoEnd.kind !== 'depth') return false;
+  const { world, player } = session;
+  const size = world.cellSize;
+  const y = session.surfaceY + demoDepthLimit(session) * size;
+  const firstRow = Math.floor(y / size);
+  const lastRow = Math.floor((y + player.height - 0.001) / size);
+  if (firstRow < 1 || lastRow >= world.height - 1) return false;
 
-  // Check the whole transfer first: a depleted debug fixture must remain untouched.
-  const fromTank = Math.min(session.tank.water, needed);
-  session.tank.water -= fromTank;
-  let remaining = needed - fromTank;
-  for (let index = 0; index < session.world.water.length && remaining > 0; index++) {
-    const amount = Math.min(remaining, session.world.water[index]);
-    session.world.water[index] -= amount;
-    remaining -= amount;
+  let destination: { x: number; cells: number[]; score: number } | null = null;
+  // Prefer an existing dry cavity. Otherwise remove only the diggable footprint
+  // after checking the entire destination, so a failed warp is transactional.
+  for (let column = 1; column < world.width - 1; column++) {
+    const x = column * size;
+    const lastColumn = Math.floor((x + player.width - 0.001) / size);
+    if (lastColumn >= world.width - 1) break;
+    const cells: number[] = [];
+    let usable = true;
+    for (let row = firstRow; row <= lastRow && usable; row++) {
+      for (let cellX = column; cellX <= lastColumn; cellX++) {
+        const index = world.index(cellX, row);
+        if (world.water[index] > 0 || world.material[index] === 3) { usable = false; break; }
+        if (world.solid[index]) cells.push(index);
+      }
+    }
+    if (!usable) continue;
+    const score = cells.length * world.width * size + Math.abs(x - player.x);
+    if (!destination || score < destination.score) destination = { x, cells, score };
   }
-  session.delivered = session.deliveryLimit;
-  session.tank.credits += needed;
-  session.completed = true;
-  session.digCooldown = 0;
-  session.strikeTime = -1;
-  session.lastStrike = null;
-  session.unloading = false;
+  if (!destination) return false;
+  for (const index of destination.cells) {
+    world.setSolid(index % world.width, Math.floor(index / world.width), false);
+  }
+  const floor = Math.floor((y + player.height + 0.001) / size);
+  let grounded = false;
+  for (let column = Math.floor(destination.x / size);
+    column <= Math.floor((destination.x + player.width - 0.001) / size); column++) {
+    if (world.isSolid(column, floor)) { grounded = true; break; }
+  }
+  Object.assign(player, { x: destination.x, y, vx: 0, vy: 0, grounded,
+    wall: 0, suppressedWall: 0, wallJumpTime: 0, airJumpAvailable: true, wallJumpChain: false });
+  finishDemo(session);
   return true;
 }
 

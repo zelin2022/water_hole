@@ -41,7 +41,7 @@ export class DevPanel {
         this.feedback('Player moved to the hopper.');
       } else if (target.closest('[data-dev-end]')) {
         if (!warpToDemoEnd(actions.session())) {
-          this.feedback(actions.session().completed ? 'This demo has ended.' : 'Not enough water remains to complete this test. Warp cancelled.');
+          this.feedback(actions.session().completed ? 'This demo has ended.' : 'No safe space at the bottom. Warp cancelled.');
           return;
         }
         actions.changed();
